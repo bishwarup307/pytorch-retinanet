@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import logging
 import colorama
-from typing import Union
+from typing import Union, Optional
 import os
 import copy
 
@@ -32,19 +32,21 @@ class ColorFormatter(logging.Formatter):
         return super(ColorFormatter, self).format(new_record, *args, **kwargs)
 
 
-def get_logger(name, filepath: Union[str, os.PathLike]):
+def get_logger(name, filepath: Optional[Union[str, os.PathLike]] = None):
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
-    file_handler = logging.FileHandler(filepath)
-    file_handler.setLevel(logging.DEBUG)
+    if filepath is not None:
+        file_handler = logging.FileHandler(filepath)
+        file_handler.setLevel(logging.DEBUG)
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(logging.DEBUG)
     formatter = ColorFormatter(
-        "[%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(funcName)10s()] -> %(message)s"
+        "[%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s] -> %(message)s"
     )
-    file_handler.setFormatter(formatter)
+    if filepath is not None:
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
     stream_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
     return logger
 
