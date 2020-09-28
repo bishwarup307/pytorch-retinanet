@@ -9,7 +9,7 @@ import csv
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
 from torch.utils.data.sampler import Sampler
-
+from torch.utils.data.dataloader import default_collate
 from pycocotools.coco import COCO
 
 import skimage.io
@@ -484,3 +484,36 @@ class AspectRatioBasedSampler(Sampler):
             [order[x % len(order)] for x in range(i, i + self.batch_size)]
             for i in range(0, len(order), self.batch_size)
         ]
+
+
+class ImageDirectory(Dataset):
+    def __init__(self, image_dir, ext="jpg"):
+        self.images = glob.glob(os.path.join(image_dir, f"*.{ext}"))
+        self.transforms = torchvision.transforms.Compose(
+            [
+                #                   torchvision.transforms.Resize((512, 512)),
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ),
+            ]
+        )
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        img = Image.open(self.images[idx])
+        return self.transforms(img), os.path.basename(self.images[idx])
+
+    def get_image(self, idx):
+        return np.array(Image.open(self.images[idx]))
+
+
+def custom_collate(batch):
+    new_batch = []
+    ids = []
+    for _batch in batch:
+        new_batch.append(_batch[:-1])
+        ids.append(_batch[-1])
+    return default_collate(new_batch), ids
