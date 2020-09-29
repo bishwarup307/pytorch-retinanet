@@ -54,7 +54,7 @@ def main(args=None):
     parser.add_argument("--epochs", help="Number of epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, help="batch_size", default=8)
     parser.add_argument(
-        "--num-workers", type=int, help="number of workers for dataloader mp", default=4
+        "--num-workers", type=int, help="number of workers for dataloader mp", default=0
     )
     parser.add_argument("--logdir", type=str, help="path to save the logs and checkpoints")
     parser = parser.parse_args(args)
@@ -88,6 +88,7 @@ def main(args=None):
             parser.image_dir,
             parser.val_json_path,
             transform=transforms.Compose([Normalizer(), Resizer()]),
+            return_ids=True,
         )
 
     elif parser.dataset == "csv":
@@ -139,7 +140,7 @@ def main(args=None):
     elif parser.depth == 34:
         retinanet = model.resnet34(num_classes=dataset_train.num_classes, pretrained=True)
     elif parser.depth == 50:
-        retinanet = model.resnet50(num_classes=dataset_train.num_classes, pretrained=False)
+        retinanet = model.resnet50(num_classes=dataset_train.num_classes, pretrained=True)
     elif parser.depth == 101:
         retinanet = model.resnet101(num_classes=dataset_train.num_classes, pretrained=True)
     elif parser.depth == 152:
@@ -263,7 +264,9 @@ def main(args=None):
         if parser.dataset == "coco":
 
             # print("Evaluating dataset")
-            stats = coco_eval.evaluate_coco(dataset_val, retinanet, parser.logdir)
+            stats = coco_eval.evaluate_coco(
+                dataset_val, retinanet, parser.logdir, parser.batch_size, parser.num_workers
+            )
             map_avg, map_50, map_75, map_small = stats[:4]
             if map_50 > best_map:
                 torch.save(

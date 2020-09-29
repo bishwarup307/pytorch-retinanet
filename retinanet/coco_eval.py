@@ -2,91 +2,91 @@ from pycocotools.cocoeval import COCOeval
 import json
 import torch
 import os
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+import numpy as np
+from colorama import Fore, Style
+
+from retinanet.dataloader import eval_collate
+from retinanet.utils import get_logger
+
+logger = get_logger(__name__, level="info")
 
 
-def evaluate_coco(dataset, model, logdir, threshold=0.05):
+def evaluate_coco(dataset, model, logdir, batch_size, num_workers, threshold=0.05):
 
     model.eval()
+    results = []
+    val_image_ids = []
 
-    with torch.no_grad():
+    valid_loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        collate_fn=eval_collate,
+        pin_memory=True,
+        drop_last=False,
+    )
 
-        # start collecting results
-        results = []
-        image_ids = []
+    for i, (images, labels, scales, image_ids) in tqdm(
+        enumerate(valid_loader), total=len(valid_loader)
+    ):
+        val_image_ids.extend(image_ids)
+        logger.debug(Fore.YELLOW + f"batch id = {i}" + Style.RESET_ALL)
+        logger.debug(image_ids)
 
-        for index in range(len(dataset)):
-            data = dataset[index]
-            scale = data["scale"]
+        with torch.no_grad():
+            img_idx, confs, classes, bboxes = model(images.float().cuda())
+        img_idx = img_idx.cpu().numpy()
+        confs = confs.cpu().numpy()
+        classes = classes.cpu().numpy()
+        bboxes = bboxes.cpu().numpy().astype(np.int32)
 
-            # run network
-            if torch.cuda.is_available():
-                scores, labels, boxes = model(
-                    data["img"].permute(2, 0, 1).cuda().float().unsqueeze(dim=0)
-                )
-            else:
-                scores, labels, boxes = model(data["img"].permute(2, 0, 1).float().unsqueeze(dim=0))
-            scores = scores.cpu()
-            labels = labels.cpu()
-            boxes = boxes.cpu()
+        if len(img_idx):
 
-            # correct boxes for image scale
-            boxes /= scale
+            logger.debug(f"len(img_idx) = {len(img_idx)}")
+            # logger.debug(f"img_idx = {img_idx}")
 
-            if boxes.shape[0] > 0:
-                # change to (x, y, w, h) (MS COCO standard)
-                boxes[:, 2] -= boxes[:, 0]
-                boxes[:, 3] -= boxes[:, 1]
+            bboxes[:, 2] -= bboxes[:, 0]
+            bboxes[:, 3] -= bboxes[:, 1]
 
-                # compute predicted labels and scores
-                # for box, score, label in zip(boxes[0], scores[0], labels[0]):
-                for box_id in range(boxes.shape[0]):
-                    score = float(scores[box_id])
-                    label = int(labels[box_id])
-                    box = boxes[box_id, :]
+            for j, idx in enumerate(img_idx):
+                imid = image_ids[idx]
+                scale = scales[idx]
+                score = confs[j]
+                class_index = classes[j]
+                bbox = bboxes[j] / scale
 
-                    # scores are sorted, so we can break
-                    if score < threshold:
-                        break
+                image_result = {
+                    "image_id": imid,
+                    "category_id": dataset.label_to_coco_label(class_index),
+                    "score": float(score),
+                    "bbox": bbox.tolist(),
+                }
+                results.append(image_result)
 
-                    # append detection for each positively labeled class
-                    image_result = {
-                        "image_id": dataset.image_ids[index],
-                        "category_id": dataset.label_to_coco_label(label),
-                        "score": float(score),
-                        "bbox": box.tolist(),
-                    }
+    if not len(results):
+        return
 
-                    # append detection to results
-                    results.append(image_result)
+    # write output
+    with open(os.path.join(logdir, "val_bbox_results.json"), "w") as f:
+        json.dump(results, f, indent=4)
 
-            # append image to list of processed images
-            image_ids.append(dataset.image_ids[index])
+    # json.dump(results, open("val_bbox_results.json".format(dataset.set_name), "w"), indent=4)
 
-            # print progress
-            print("{}/{}".format(index, len(dataset)), end="\r")
+    # load results in COCO evaluation tool
+    coco_true = dataset.coco
+    coco_pred = coco_true.loadRes(os.path.join(logdir, "val_bbox_results.json"))
 
-        if not len(results):
-            return
+    # run COCO evaluation
+    coco_eval = COCOeval(coco_true, coco_pred, "bbox")
+    coco_eval.params.imgIds = val_image_ids
+    coco_eval.evaluate()
+    coco_eval.accumulate()
+    coco_eval.summarize()
 
-        # write output
-        with open(os.path.join(logdir, "val_bbox_results.json"), "w") as f:
-            json.dump(results, f, indent=4)
+    stats = coco_eval.stats
 
-        # json.dump(results, open("val_bbox_results.json".format(dataset.set_name), "w"), indent=4)
+    model.train()
 
-        # load results in COCO evaluation tool
-        coco_true = dataset.coco
-        coco_pred = coco_true.loadRes(os.path.join(logdir, "val_bbox_results.json"))
-
-        # run COCO evaluation
-        coco_eval = COCOeval(coco_true, coco_pred, "bbox")
-        coco_eval.params.imgIds = image_ids
-        coco_eval.evaluate()
-        coco_eval.accumulate()
-        coco_eval.summarize()
-
-        stats = coco_eval.stats
-
-        model.train()
-
-        return stats
+    return stats

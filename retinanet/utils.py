@@ -32,9 +32,13 @@ class ColorFormatter(logging.Formatter):
         return super(ColorFormatter, self).format(new_record, *args, **kwargs)
 
 
-def get_logger(name, filepath: Optional[Union[str, os.PathLike]] = None):
+def get_logger(
+    name, filepath: Optional[Union[str, os.PathLike]] = None, level: Optional[str] = "debug"
+):
+    log_level = {"info": logging.INFO, "debug": logging.DEBUG, "error": logging.ERROR}
+
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(log_level.get(level.lower(), logging.INFO))
     if filepath is not None:
         file_handler = logging.FileHandler(filepath)
         file_handler.setLevel(logging.DEBUG)

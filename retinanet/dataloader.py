@@ -24,7 +24,7 @@ from PIL import Image
 class CocoDataset(Dataset):
     """Coco dataset."""
 
-    def __init__(self, image_dir, json_path, transform=None):
+    def __init__(self, image_dir, json_path, transform=None, return_ids=False):
         """
         Args:
             root_dir (string): COCO directory.
@@ -38,7 +38,7 @@ class CocoDataset(Dataset):
 
         self.coco = COCO(json_path)
         self.image_ids = self.coco.getImgIds()
-
+        self.return_ids = return_ids
         self.load_classes()
         print(f"number of classes: {self.num_classes}")
 
@@ -71,6 +71,9 @@ class CocoDataset(Dataset):
         sample = {"img": img, "annot": annot}
         if self.transform:
             sample = self.transform(sample)
+
+        if self.return_ids:
+            return sample, self.image_ids[idx]
 
         return sample
 
@@ -518,3 +521,14 @@ def custom_collate(batch):
         new_batch.append(_batch[:-1])
         ids.append(_batch[-1])
     return default_collate(new_batch), ids
+
+
+def eval_collate(batch):
+    image_ids, images, labels, scales = [], [], [], []
+    for b in batch:
+        instance, img_id = b
+        images.append(instance["img"])
+        labels.append(instance["annot"])
+        scales.append(instance["scale"])
+        image_ids.append(img_id)
+    return torch.stack(images).permute(0, 3, 1, 2), labels, scales, image_ids

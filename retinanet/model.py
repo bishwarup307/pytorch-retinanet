@@ -157,7 +157,7 @@ class ClassificationModel(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, num_classes, block, layers, nms_iou_threshold=0.5, conf_threshold=0.5):
+    def __init__(self, num_classes, block, layers, nms_iou_threshold=0.5, conf_threshold=0.05):
 
         self.conf_threshold = conf_threshold
         self.nms_iou_threshold = nms_iou_threshold
