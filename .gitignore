@@ -101,3 +101,4 @@ ENV/
 
 *.zip
 *.pt
+*.pth
