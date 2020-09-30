@@ -218,6 +218,8 @@ class ResNet(nn.Module):
         self.regressionModel.output.bias.data.fill_(0)
 
         self.freeze_bn()
+        
+        self.export = False
 
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
@@ -272,6 +274,9 @@ class ResNet(nn.Module):
         )
 
         anchors = self.anchors(img_batch)
+        
+        if self.export:
+            return anchors, classification, regression
 
         if self.training:
             return self.focalLoss(classification, regression, anchors, annotations)
