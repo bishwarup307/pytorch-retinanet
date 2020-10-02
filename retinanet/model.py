@@ -218,7 +218,7 @@ class ResNet(nn.Module):
         self.regressionModel.output.bias.data.fill_(0)
 
         self.freeze_bn()
-        
+
         self.export = False
 
     def _make_layer(self, block, planes, blocks, stride=1):
@@ -274,7 +274,7 @@ class ResNet(nn.Module):
         )
 
         anchors = self.anchors(img_batch)
-        
+
         if self.export:
             return anchors, classification, regression
 
@@ -321,6 +321,7 @@ class ResNet(nn.Module):
             final_scores = scores[mask][keep_indices]
             final_class_indices = selected_class_indices[keep_indices]
             return final_image_idx, final_scores, final_class_indices, final_bboxes
+
             # transformed_anchors = self.regressBoxes(anchors, regression)
             # transformed_anchors = self.clipBoxes(transformed_anchors, img_batch)
 
