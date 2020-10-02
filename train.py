@@ -57,6 +57,8 @@ def main(args=None):
         "--num-workers", type=int, help="number of workers for dataloader mp", default=0
     )
     parser.add_argument("--logdir", type=str, help="path to save the logs and checkpoints")
+    parser.add_argument("--plot", action="store_true", help="whether to plot images in tensorboard")
+
     parser = parser.parse_args(args)
 
     try:
@@ -197,6 +199,7 @@ def main(args=None):
 
     # scaler = amp.GradScaler()
     best_map = 0
+    n_iter = 0
     for epoch_num in range(parser.epochs):
 
         retinanet.train()
@@ -217,14 +220,14 @@ def main(args=None):
                     classification_loss, regression_loss = retinanet(
                         [data["img"].float(), data["annot"]]
                     )
-
+                n_iter = epoch_num * len(dataloader_train) + iter_num
                 classification_loss = classification_loss.mean()
                 regression_loss = regression_loss.mean()
 
                 loss = classification_loss + regression_loss
                 for param_group in optimizer.param_groups:
                     lr = param_group["lr"]
-                writer.add_scalar("Learning rate", lr, epoch_num * len(dataloader_train) + iter_num)
+                writer.add_scalar("Learning rate", lr, n_iter)
                 pbar_desc = f"Epoch: {epoch_num} | lr = {lr:0.6f} | batch: {iter_num} | cls: {classification_loss:.4f} | reg: {regression_loss:.4f}"
                 pbar.set_description(pbar_desc)
                 pbar.update(1)
@@ -264,9 +267,21 @@ def main(args=None):
         if parser.dataset == "coco":
 
             # print("Evaluating dataset")
-            stats = coco_eval.evaluate_coco(
-                dataset_val, retinanet, parser.logdir, parser.batch_size, parser.num_workers
-            )
+            if parser.plot:
+                stats = coco_eval.evaluate_coco(
+                    dataset_val,
+                    retinanet,
+                    parser.logdir,
+                    parser.batch_size,
+                    parser.num_workers,
+                    writer,
+                    n_iter,
+                )
+            else:
+                stats = coco_eval.evaluate_coco(
+                    dataset_val, retinanet, parser.logdir, parser.batch_size, parser.num_workers
+                )
+
             map_avg, map_50, map_75, map_small = stats[:4]
             if map_50 > best_map:
                 torch.save(

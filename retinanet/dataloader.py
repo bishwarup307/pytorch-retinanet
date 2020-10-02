@@ -77,13 +77,16 @@ class CocoDataset(Dataset):
 
         return sample
 
-    def load_image(self, image_index):
+    def load_image(self, image_index, normalize=True):
         image_info = self.coco.loadImgs(self.image_ids[image_index])[0]
         path = os.path.join(self.image_dir, image_info["file_name"])
         img = skimage.io.imread(path)
 
         if len(img.shape) == 2:
             img = skimage.color.gray2rgb(img)
+
+        if not normalize:
+            return img
 
         return img.astype(np.float32) / 255.0
 
