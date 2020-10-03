@@ -11,6 +11,7 @@ import torch.optim as optim
 from torch.cuda import amp
 from torchvision import transforms
 from tensorboardX import SummaryWriter
+from warmup_scheduler import GradualWarmupScheduler
 
 from retinanet import model
 from retinanet.dataloader import (
@@ -179,9 +180,14 @@ def main(args=None):
 
     retinanet.training = True
 
-    optimizer = optim.Adam(retinanet.parameters(), lr=1e-5)
+    # optimizer = optim.Adam(retinanet.parameters(), lr=1e-5)
+    optimizer = optim.SGD(retinanet.parameters(), lr=0.0001, momentum=0.95)
 
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=parser.epochs, eta_min=1e-6)
+    scheduler_warmup = GradualWarmupScheduler(
+        optimizer, multiplier=100, total_epoch=5, after_scheduler=scheduler
+    )
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
     # scheduler = optim.lr_scheduler.OneCycleLR(
     #     optimizer,
     #     max_lr=1e-4,
@@ -201,7 +207,7 @@ def main(args=None):
     best_map = 0
     n_iter = 0
     for epoch_num in range(parser.epochs):
-
+        scheduler_warmup.step(epoch_num)
         retinanet.train()
         retinanet.module.freeze_bn()
 
@@ -302,7 +308,7 @@ def main(args=None):
 
             mAP = csv_eval.evaluate(dataset_val, retinanet)
 
-        scheduler.step(np.mean(epoch_loss))
+        # scheduler.step(np.mean(epoch_loss))
 
         # torch.save(retinanet.module, os.path.join(parser.logdir, f"retinanet_{epoch_num}.pt"))
 
