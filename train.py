@@ -21,8 +21,20 @@ from retinanet.dataloader import (
     AspectRatioBasedSampler,
     Augmenter,
     Normalizer,
-    get_aug_map,
+    
 )
+
+from retinanet.augmentation import (
+    RandomHorizontalFlip,
+    RandomRotate,
+    RandomShear,
+    RandomBrightnessAdjust,
+    RandomContrastAdjust,
+    RandomGammaCorrection,
+    RandomSaturationAdjust,
+    RandomHueAdjust,
+    RandAugment,
+    get_aug_map,)
 from retinanet.utils import get_logger
 from torch.utils.data import DataLoader
 
