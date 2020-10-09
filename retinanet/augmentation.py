@@ -1,3 +1,18 @@
+"""
+Augmenters that blur images.
+List of augmenters:
+    * :class:`RandomHorizontalFlip`
+    * :class:`RandomRotate`
+    * :class:`RandomShear`
+    * :class:`RandomBrightnessAdjust`
+    * :class:`RandomContrastAdjust`
+    * :class:`RandomGammaCorrection`
+    * :class:`RandomSaturationAdjust`
+    * :class:`RandomHueAdjust`
+    * :class:`RandomSharpen`
+    * :class:`RandomGaussianBlur`
+"""
+
 import sys
 import os
 import torch
@@ -428,6 +443,130 @@ class RandomHueAdjust(object):
         img = img/255.
         sample = {"img": img.copy(), "annot": bboxes.copy()}
         return sample
+
+class RandomShapren(object):
+    """Randomly sharpens the image"""
+
+    def __init__(self, alpha: Optional[Union[Tuple[float,float],float]]=0.5,
+                       lightness: Optional[Union[Tuple[float,float],float]]=1.0,
+                       p: Optional[float]=0.5):
+        """Initialize RandomShapren with alpha and lightness.
+
+        Args:
+            alpha (Optional[Union[Tuple[float,float],float]], optional): Blending factor of the sharpened image. At ``0.0``, only the original
+        image is visible, at ``1.0`` only its sharpened version is visible. Defaults to 0.5.
+            lightness (Optional[Union[Tuple[float,float],float]], optional): Lightness/brightness of the sharpened image. Defaults to 1.0.
+            p (Optional[float], optional): Probability of sharpening the image. Defaults to 0.5.
+        """        
+
+        if isinstance(alpha,tuple):
+            assert len(alpha) == 2, f"if alpha is a tuple, its length should be 2, but got {alpha}."
+            assert alpha[0] >= 0. and alpha[0] <= 1. and alpha[1] >= 0. and alpha[1] <= 1.,f"alpha should be in range [0.,1.] but got {alpha}."
+            self.alpha = random.uniform(*alpha)
+        else:
+            self.alpha = alpha
+
+        if isinstance(lightness,tuple):
+            assert len(lightness) == 2, f"if lightness is a tuple, its length should be 2, but got {lightness}."
+            assert lightness[0] >= 0 and lightness[1] >= 0. ,f"lightness should be in range [0.,None] but got {lightness}."
+            self.lightness = random.uniform(*lightness)
+        else:
+            self.lightness = lightness
+
+        matrix_nochange = np.array([
+                    [0, 0, 0],
+                    [0, 1, 0],
+                    [0, 0, 0]
+                ], dtype=np.float32)
+        matrix_effect = np.array([
+                    [-1, -1, -1],
+                    [-1, 8+self.lightness, -1],
+                    [-1, -1, -1]
+                ], dtype=np.float32)
+        self.matrix = ((1-self.alpha) * matrix_nochange + self.alpha * matrix_effect)
+        self.p = p
+
+    def __call__(self, sample: Dict[str,np.ndarray]) -> Dict[str,np.ndarray]:
+        """Randomly sharpends the image with probablity self.p .
+
+       Args:
+            sample (Dict[str,np.ndarray]): image and bounding boxes to be augmented in the format 
+                                           {"img":np.ndarray,"annot":np.ndarray}
+
+        Returns:
+            Dict[str,np.ndarray]: augmented image and bounding boxes in the format 
+                                  {"img":np.ndarray,"annot":np.ndarray}
+        """       
+        if random.random() > self.p:
+            return sample
+        
+        img,bboxes = sample["img"], sample["annot"]
+        img = cv2.filter2D(img.copy(), -1, self.matrix,dst=img)
+        sample = {"img": img.copy(), "annot": bboxes.copy()}
+        return sample
+
+class RandomGaussianBlur(object):
+    """Randomly Blurrs the image based on guassian kernal standard deviation and size"""
+
+    def __init__(self, sigma: Optional[Union[Tuple[float,float],float]]=0.2,
+                       ksize: Optional[int]=None,
+                       p: Optional[float]=0.5):
+        """Initialize RandomGaussianBlur with sigma(standard deviation) and kernal size.
+
+        Args:
+            sigma (Optional[Union[Tuple[float,float],float]], optional): Standard deviation of the gaussian kernel. Defaults to 0.5.
+            ksize (Optional[int], optional): Size of the gaussian kernal. Defaults to None.
+            p (Optional[float], optional): Probability of blurring the image. Defaults to 0.5
+        """              
+
+        if isinstance(sigma,tuple):
+            assert len(sigma) == 2, f"if sigma is a tuple, its length should be 2, but got {sigma}."
+            assert sigma[0] >= 0. and sigma[0] <= 3. and sigma[1] >= 0. and sigma[1] <= 3.,f"sigma should be in range [0.,3.] but got {sigma}."
+            self.sigma = random.uniform(*sigma)
+        else:
+            self.sigma = sigma
+
+        if ksize is None:
+            self.ksize = self._compute_gaussian_blur_ksize(self.sigma)
+        else:
+            if ksize % 2 == 0:
+                ksize += 1
+            self.ksize = max(ksize,3)
+
+        self.p = p
+
+    def __call__(self, sample: Dict[str,np.ndarray]) -> Dict[str,np.ndarray]:
+        """Randomly blurs the image using Gaussian kernal with probablity self.p .
+
+       Args:
+            sample (Dict[str,np.ndarray]): image and bounding boxes to be augmented in the format 
+                                           {"img":np.ndarray,"annot":np.ndarray}
+
+        Returns:
+            Dict[str,np.ndarray]: augmented image and bounding boxes in the format 
+                                  {"img":np.ndarray,"annot":np.ndarray}
+        """       
+        if random.random() > self.p:
+            return sample
+        
+        img,bboxes = sample["img"], sample["annot"]
+        img = cv2.GaussianBlur(img.copy(),(self.ksize,self.ksize),sigmaX=self.sigma,sigmaY=self.sigma,dst=img,borderType=cv2.BORDER_REFLECT_101)
+        sample = {"img": img.copy(), "annot": bboxes.copy()}
+        return sample
+
+    def _compute_gaussian_blur_ksize(self,sigma):
+        if sigma < 3.0:
+            ksize = 3.3 * sigma  # 99% of weight
+        elif sigma < 5.0:
+            ksize = 2.9 * sigma  # 97% of weight
+        else:
+            ksize = 2.6 * sigma  # 95% of weight
+
+        
+        ksize = int(max(ksize, 3))
+        if ksize % 2 == 0:
+            ksize += 1
+        return ksize
     
 def augment_list() -> List:
     """
@@ -443,6 +582,8 @@ def augment_list() -> List:
         (RandomGammaCorrection,0.05,0.95),
         (RandomSaturationAdjust,0.1,1.1),
         (RandomHueAdjust,-0.5,0.5),
+        (RandomShapren,0.,1.),
+        (RandomGaussianBlur,0.,2.),
         ]
     
     return l
@@ -507,5 +648,7 @@ def get_aug_map(p: Optional[int]=0.5) -> Dict[str,object]:
                "hue":RandomHueAdjust(p=p),
                "gamma":RandomGammaCorrection(p=p),
                "saturation":RandomSaturationAdjust(p=p),
+               "sharpen":RandomShapren((0.,1.),(0.,2.),p=p),
+               "gblur":RandomGaussianBlur((0.,3.),5,p=p),
                }
     return aug_map

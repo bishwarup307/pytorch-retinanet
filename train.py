@@ -33,6 +33,8 @@ from retinanet.augmentation import (
     RandomGammaCorrection,
     RandomSaturationAdjust,
     RandomHueAdjust,
+    RandomShapren,
+    RandomGaussianBlur,
     RandAugment,
     get_aug_map,)
 from retinanet.utils import get_logger
