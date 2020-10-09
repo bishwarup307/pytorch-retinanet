@@ -1,6 +1,5 @@
 """
-Augmenters that blur images.
-List of augmenters:
+List of augmenters available:
     * :class:`RandomHorizontalFlip`
     * :class:`RandomRotate`
     * :class:`RandomShear`
@@ -444,6 +443,7 @@ class RandomHueAdjust(object):
         sample = {"img": img.copy(), "annot": bboxes.copy()}
         return sample
 
+#Referred https://github.com/aleju/imgaug/blob/master/imgaug/augmenters/convolutional.py
 class RandomShapren(object):
     """Randomly sharpens the image"""
 
@@ -505,6 +505,7 @@ class RandomShapren(object):
         sample = {"img": img.copy(), "annot": bboxes.copy()}
         return sample
 
+#Referred https://github.com/aleju/imgaug/blob/master/imgaug/augmenters/blur.py
 class RandomGaussianBlur(object):
     """Randomly Blurrs the image based on guassian kernal standard deviation and size"""
 
@@ -554,7 +555,16 @@ class RandomGaussianBlur(object):
         sample = {"img": img.copy(), "annot": bboxes.copy()}
         return sample
 
-    def _compute_gaussian_blur_ksize(self,sigma):
+    def _compute_gaussian_blur_ksize(self,sigma: float) -> int:
+       """Calculates kernal size based on sigma using the formulation mentioned below.
+           https://docs.opencv.org/3.1.0/d4/d86/group__imgproc__filter.html#gac05a120c1ae92a6060dd0db190a61afa
+        Args:
+            sigma (float): Standard deviation of guassian kernal.
+
+        Returns:
+            int: approximated kernal size.
+        """        
+
         if sigma < 3.0:
             ksize = 3.3 * sigma  # 99% of weight
         elif sigma < 5.0:
