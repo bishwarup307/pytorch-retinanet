@@ -67,7 +67,7 @@ def main(args=None):
         "--depth", help="Resnet depth, must be one of 18, 34, 50, 101, 152", type=int, default=50
     )
     parser.add_argument("--epochs", help="Number of epochs", type=int, default=100)
-    parser.add_argument("--batch-size", type=int, help="batch_size", default=1)
+    parser.add_argument("--batch-size", type=int, help="batch_size", default=8)
     parser.add_argument(
         "--num-workers", type=int, help="number of workers for dataloader mp", default=0
     )

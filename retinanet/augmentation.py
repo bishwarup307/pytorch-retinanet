@@ -556,7 +556,7 @@ class RandomGaussianBlur(object):
         return sample
 
     def _compute_gaussian_blur_ksize(self,sigma: float) -> int:
-       """Calculates kernal size based on sigma using the formulation mentioned below.
+        """Calculates kernal size based on sigma using the formulation mentioned below.
            https://docs.opencv.org/3.1.0/d4/d86/group__imgproc__filter.html#gac05a120c1ae92a6060dd0db190a61afa
         Args:
             sigma (float): Standard deviation of guassian kernal.
