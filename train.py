@@ -72,7 +72,7 @@ def main(args=None):
         "--num-workers", type=int, help="number of workers for dataloader mp", default=0
     )
     parser.add_argument("--logdir", type=str, help="path to save the logs and checkpoints")
-    parser.add_argument('--augs', help="possible values:rand,hflip,rotate,shear,brightness,contrast,hue,gamma,saturation",nargs='+')
+    parser.add_argument('--augs', help="available augs:rand,hflip,rotate,shear,brightness,contrast,hue,gamma,saturation,sharpen,gblur should be seperated by spaces.",nargs='+')
     parser.add_argument('--augs-prob', type=float, help="probability of applying augmentation in range [0.,1.]")
     parser = parser.parse_args(args)
 
