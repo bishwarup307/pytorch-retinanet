@@ -24,6 +24,21 @@ from retinanet.dataloader import (
     Augmenter,
     Normalizer,
 )
+
+from retinanet.augmentation import (
+    RandomHorizontalFlip,
+    RandomRotate,
+    RandomShear,
+    RandomBrightnessAdjust,
+    RandomContrastAdjust,
+    RandomGammaCorrection,
+    RandomSaturationAdjust,
+    RandomHueAdjust,
+    RandomShapren,
+    RandomGaussianBlur,
+    RandAugment,
+    get_aug_map,
+)
 from retinanet.utils import get_logger
 from torch.utils.data import DataLoader
 
@@ -54,7 +69,7 @@ def main(args=None):
         "--depth", help="Resnet depth, must be one of 18, 34, 50, 101, 152", type=int, default=50
     )
     parser.add_argument("--epochs", help="Number of epochs", type=int, default=100)
-    parser.add_argument("--batch-size", type=int, help="batch_size", default=8)
+    parser.add_argument("--batch-size", type=int, help="batch_size", default=1)
     parser.add_argument(
         "--num-workers", type=int, help="number of workers for dataloader mp", default=0
     )
@@ -64,6 +79,14 @@ def main(args=None):
         "--nsr", type=float, default=None, help="whether to use negative sampling of images"
     )
 
+    parser.add_argument(
+        "--augs",
+        help="possible values:rand,hflip,rotate,shear,brightness,contrast,hue,gamma,saturation",
+        nargs="+",
+    )
+    parser.add_argument(
+        "--augs-prob", type=float, help="probability of applying augmentation in range [0.,1.]"
+    )
     parser = parser.parse_args(args)
 
     try:
@@ -85,11 +108,32 @@ def main(args=None):
 
         # if parser.coco_path is None:
         #     raise ValueError("Must provide --coco_path when training on COCO,")
+        train_transforms = [Normalizer()]
+        if parser.augs is None:
+            train_transforms.append(Resizer())
+        else:
+            p = 0.5
+            if parser.augs_prob is not None:
+                p = parser.augs_prob
+            aug_map = get_aug_map(p=p)
+            for aug in parser.augs:
+                if aug in aug_map.keys():
+                    train_transforms.append(aug_map[aug])
+                else:
+                    logger.info(f"{aug} is not available.")
+            train_transforms.append(Resizer())
+
+        if len(train_transforms) == 2:
+            logger.info(
+                "Not applying any special augmentations, using only {}".format(train_transforms)
+            )
+        else:
+            logger.info("Applying augmentations {} with probability {}".format(train_transforms, p))
 
         dataset_train = CocoDataset(
             parser.image_dir,
             parser.train_json_path,
-            transform=transforms.Compose([Normalizer(), Augmenter(), Resizer()]),
+            transform=transforms.Compose(train_transforms),
         )
         dataset_val = CocoDataset(
             parser.image_dir,
