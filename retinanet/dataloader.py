@@ -24,7 +24,7 @@ from PIL import Image
 class CocoDataset(Dataset):
     """Coco dataset."""
 
-    def __init__(self, image_dir, json_path, transform=None, return_ids=False):
+    def __init__(self, image_dir, json_path, transform=None, return_ids=False, nsr=None):
         """
         Args:
             root_dir (string): COCO directory.
@@ -39,8 +39,20 @@ class CocoDataset(Dataset):
         self.coco = COCO(json_path)
         self.image_ids = self.coco.getImgIds()
         self.return_ids = return_ids
+        self.nsr = nsr if nsr is not None else 1.0
         self.load_classes()
+        self._obtain_weights()
         print(f"number of classes: {self.num_classes}")
+
+    def _obtain_weights(self):
+        weights = []
+        for imid in self.image_ids:
+            anns = self.coco.getAnnIds([imid])
+            if anns:
+                weights.append(1)
+            else:
+                weights.append(self.nsr)
+        self.weights = weights
 
     def load_classes(self):
         # load class names (name -> label)

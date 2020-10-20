@@ -9,6 +9,7 @@ import colorama
 import torch
 import torch.optim as optim
 from torch.cuda import amp
+from torch.utils.data.sampler import WeightedRandomSampler
 from torchvision import transforms
 from tensorboardX import SummaryWriter
 from warmup_scheduler import GradualWarmupScheduler
@@ -59,6 +60,9 @@ def main(args=None):
     )
     parser.add_argument("--logdir", type=str, help="path to save the logs and checkpoints")
     parser.add_argument("--plot", action="store_true", help="whether to plot images in tensorboard")
+    parser.add_argument(
+        "--nsr", type=float, default=None, help="whether to use negative sampling of images"
+    )
 
     parser = parser.parse_args(args)
 
@@ -121,10 +125,30 @@ def main(args=None):
     else:
         raise ValueError("Dataset type not understood (must be csv or coco), exiting.")
 
-    sampler = AspectRatioBasedSampler(dataset_train, batch_size=parser.batch_size, drop_last=False)
-    dataloader_train = DataLoader(
-        dataset_train, num_workers=parser.num_workers, collate_fn=collater, batch_sampler=sampler
-    )
+    if parser.nsr is not None:
+        logger.info(f"using WeightedRandomSampler with negative (image) sample rate = {parser.nsr}")
+        weighted_sampler = WeightedRandomSampler(
+            dataset_train.weights, len(dataset_train), replacement=True
+        )
+        dataloader_train = DataLoader(
+            dataset_train,
+            num_workers=parser.num_workers,
+            collate_fn=collater,
+            sampler=weighted_sampler,
+            batch_size=parser.batch_size,
+            pin_memory=True,
+        )
+
+    else:
+        sampler = AspectRatioBasedSampler(
+            dataset_train, batch_size=parser.batch_size, drop_last=False
+        )
+        dataloader_train = DataLoader(
+            dataset_train,
+            num_workers=parser.num_workers,
+            collate_fn=collater,
+            batch_sampler=sampler,
+        )
 
     if dataset_val is not None:
         sampler_val = AspectRatioBasedSampler(
@@ -180,13 +204,13 @@ def main(args=None):
 
     retinanet.training = True
 
-    # optimizer = optim.Adam(retinanet.parameters(), lr=1e-5)
-    optimizer = optim.SGD(retinanet.parameters(), lr=0.0001, momentum=0.95)
+    optimizer = optim.Adam(retinanet.parameters(), lr=1e-5)
+    # optimizer = optim.SGD(retinanet.parameters(), lr=0.0001, momentum=0.95)
 
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=parser.epochs, eta_min=1e-6)
-    scheduler_warmup = GradualWarmupScheduler(
-        optimizer, multiplier=100, total_epoch=5, after_scheduler=scheduler
-    )
+    # scheduler_warmup = GradualWarmupScheduler(
+    #     optimizer, multiplier=100, total_epoch=5, after_scheduler=scheduler
+    # )
     # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
     # scheduler = optim.lr_scheduler.OneCycleLR(
     #     optimizer,
@@ -207,7 +231,7 @@ def main(args=None):
     best_map = 0
     n_iter = 0
     for epoch_num in range(parser.epochs):
-        scheduler_warmup.step(epoch_num)
+        # scheduler_warmup.step(epoch_num)
         retinanet.train()
         retinanet.module.freeze_bn()
 
@@ -252,17 +276,6 @@ def main(args=None):
                 loss_hist.append(float(loss))
 
                 epoch_loss.append(float(loss))
-                # scaler.update()
-                # if iter_num % 50 == 0:
-                #     logger.info(
-                #         "Epoch: {} | Iteration: {} | Classification loss: {:1.5f} | Regression loss: {:1.5f} | Running loss: {:1.5f}".format(
-                #             epoch_num,
-                #             iter_num,
-                #             float(classification_loss),
-                #             float(regression_loss),
-                #             np.mean(loss_hist),
-                #         )
-                #     )
 
                 del classification_loss
                 del regression_loss
@@ -309,7 +322,7 @@ def main(args=None):
             mAP = csv_eval.evaluate(dataset_val, retinanet)
 
         # scheduler.step(np.mean(epoch_loss))
-
+        scheduler.step()
         # torch.save(retinanet.module, os.path.join(parser.logdir, f"retinanet_{epoch_num}.pt"))
 
     retinanet.eval()
