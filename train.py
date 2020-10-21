@@ -60,29 +60,48 @@ def main(args=None):
     parser.add_argument(
         "--csv_train", help="Path to file containing training annotations (see readme)"
     )
-    parser.add_argument("--csv_classes", help="Path to file containing class list (see readme)")
     parser.add_argument(
-        "--csv_val", help="Path to file containing validation annotations (optional, see readme)"
+        "--csv_classes", help="Path to file containing class list (see readme)"
+    )
+    parser.add_argument(
+        "--csv_val",
+        help="Path to file containing validation annotations (optional, see readme)",
     )
 
     parser.add_argument(
-        "--depth", help="Resnet depth, must be one of 18, 34, 50, 101, 152", type=int, default=50
+        "--depth",
+        help="Resnet depth, must be one of 18, 34, 50, 101, 152",
+        type=int,
+        default=50,
     )
     parser.add_argument("--epochs", help="Number of epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, help="batch_size", default=8)
     parser.add_argument(
         "--num-workers", type=int, help="number of workers for dataloader mp", default=0
     )
-    parser.add_argument("--logdir", type=str, help="path to save the logs and checkpoints")
-
-    parser.add_argument("--plot", action="store_true", help="whether to plot images in tensorboard")
     parser.add_argument(
-        "--nsr", type=float, default=None, help="whether to use negative sampling of images"
+        "--logdir", type=str, help="path to save the logs and checkpoints"
     )
 
-    parser.add_argument('--augs', help="available augs:rand,hflip,rotate,shear,brightness,contrast,hue,gamma,saturation,sharpen,gblur should be seperated by spaces.",nargs='+')
     parser.add_argument(
-        "--augs-prob", type=float, help="probability of applying augmentation in range [0.,1.]"
+        "--plot", action="store_true", help="whether to plot images in tensorboard"
+    )
+    parser.add_argument(
+        "--nsr",
+        type=float,
+        default=None,
+        help="whether to use negative sampling of images",
+    )
+
+    parser.add_argument(
+        "--augs",
+        help="available augs:rand,hflip,rotate,shear,brightness,contrast,hue,gamma,saturation,sharpen,gblur should be seperated by spaces.",
+        nargs="+",
+    )
+    parser.add_argument(
+        "--augs-prob",
+        type=float,
+        help="probability of applying augmentation in range [0.,1.]",
     )
 
     parser = parser.parse_args(args)
@@ -123,10 +142,16 @@ def main(args=None):
 
         if len(train_transforms) == 2:
             logger.info(
-                "Not applying any special augmentations, using only {}".format(train_transforms)
+                "Not applying any special augmentations, using only {}".format(
+                    train_transforms
+                )
             )
         else:
-            logger.info("Applying augmentations {} with probability {}".format(train_transforms, p))
+            logger.info(
+                "Applying augmentations {} with probability {}".format(
+                    train_transforms, p
+                )
+            )
 
         dataset_train = CocoDataset(
             parser.image_dir,
@@ -168,7 +193,9 @@ def main(args=None):
         raise ValueError("Dataset type not understood (must be csv or coco), exiting.")
 
     if parser.nsr is not None:
-        logger.info(f"using WeightedRandomSampler with negative (image) sample rate = {parser.nsr}")
+        logger.info(
+            f"using WeightedRandomSampler with negative (image) sample rate = {parser.nsr}"
+        )
         weighted_sampler = WeightedRandomSampler(
             dataset_train.weights, len(dataset_train), replacement=True
         )
@@ -205,15 +232,25 @@ def main(args=None):
 
     # Create the model
     if parser.depth == 18:
-        retinanet = model.resnet18(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet18(
+            num_classes=dataset_train.num_classes, pretrained=True
+        )
     elif parser.depth == 34:
-        retinanet = model.resnet34(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet34(
+            num_classes=dataset_train.num_classes, pretrained=True
+        )
     elif parser.depth == 50:
-        retinanet = model.resnet50(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet50(
+            num_classes=dataset_train.num_classes, pretrained=True
+        )
     elif parser.depth == 101:
-        retinanet = model.resnet101(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet101(
+            num_classes=dataset_train.num_classes, pretrained=True
+        )
     elif parser.depth == 152:
-        retinanet = model.resnet152(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet152(
+            num_classes=dataset_train.num_classes, pretrained=True
+        )
     else:
         raise ValueError("Unsupported model depth, must be one of 18, 34, 50, 101, 152")
 
@@ -239,17 +276,19 @@ def main(args=None):
         if torch.cuda.is_available():
             retinanet = retinanet.cuda()
 
-    if torch.cuda.is_available():
-        retinanet = torch.nn.DataParallel(retinanet).cuda()
-    else:
-        retinanet = torch.nn.DataParallel(retinanet)
+    # if torch.cuda.is_available():
+    #     retinanet = torch.nn.DataParallel(retinanet).cuda()
+    # else:
+    #     retinanet = torch.nn.DataParallel(retinanet)
 
     retinanet.training = True
 
     optimizer = optim.Adam(retinanet.parameters(), lr=1e-5)
     # optimizer = optim.SGD(retinanet.parameters(), lr=0.0001, momentum=0.95)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=parser.epochs, eta_min=1e-6)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=parser.epochs, eta_min=1e-6
+    )
     # scheduler_warmup = GradualWarmupScheduler(
     #     optimizer, multiplier=100, total_epoch=5, after_scheduler=scheduler
     # )
@@ -265,7 +304,8 @@ def main(args=None):
     loss_hist = collections.deque(maxlen=500)
 
     retinanet.train()
-    retinanet.module.freeze_bn()
+    retinanet.freeze_bn()
+    # retinanet.module.freeze_bn()
 
     logger.info("Num training images: {}".format(len(dataset_train)))
 
@@ -275,7 +315,8 @@ def main(args=None):
     for epoch_num in range(parser.epochs):
         # scheduler_warmup.step(epoch_num)
         retinanet.train()
-        retinanet.module.freeze_bn()
+        retinanet.freeze_bn()
+        # retinanet.module.freeze_bn()
 
         epoch_loss = []
         pbar = tqdm(enumerate(dataloader_train), total=len(dataloader_train))
@@ -340,19 +381,30 @@ def main(args=None):
                 )
             else:
                 stats = coco_eval.evaluate_coco(
-                    dataset_val, retinanet, parser.logdir, parser.batch_size, parser.num_workers
+                    dataset_val,
+                    retinanet,
+                    parser.logdir,
+                    parser.batch_size,
+                    parser.num_workers,
                 )
 
             map_avg, map_50, map_75, map_small = stats[:4]
             if map_50 > best_map:
                 torch.save(
-                    retinanet.module, os.path.join(parser.logdir, f"retinanet_resnet50_best.pt")
+                    retinanet,
+                    os.path.join(parser.logdir, f"retinanet_resnet50_best.pt"),
                 )
                 best_map = map_50
-            writer.add_scalar("eval/map@0.5:0.95", map_avg, epoch_num * len(dataloader_train))
+            writer.add_scalar(
+                "eval/map@0.5:0.95", map_avg, epoch_num * len(dataloader_train)
+            )
             writer.add_scalar("eval/map@0.5", map_50, epoch_num * len(dataloader_train))
-            writer.add_scalar("eval/map@0.75", map_75, epoch_num * len(dataloader_train))
-            writer.add_scalar("eval/map_small", map_small, epoch_num * len(dataloader_train))
+            writer.add_scalar(
+                "eval/map@0.75", map_75, epoch_num * len(dataloader_train)
+            )
+            writer.add_scalar(
+                "eval/map_small", map_small, epoch_num * len(dataloader_train)
+            )
             logger.info(
                 f"Epoch: {epoch_num} | lr = {lr:.6f} |map@0.5:0.95 = {map_avg:.4f} | map@0.5 = {map_50:.4f} | map@0.75 = {map_75:.4f} | map-small = {map_small:.4f}"
             )
