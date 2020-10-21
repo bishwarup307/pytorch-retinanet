@@ -9,8 +9,10 @@ import colorama
 import torch
 import torch.optim as optim
 from torch.cuda import amp
+from torch.utils.data.sampler import WeightedRandomSampler
 from torchvision import transforms
 from tensorboardX import SummaryWriter
+from warmup_scheduler import GradualWarmupScheduler
 
 from retinanet import model
 from retinanet.dataloader import (
@@ -21,7 +23,6 @@ from retinanet.dataloader import (
     AspectRatioBasedSampler,
     Augmenter,
     Normalizer,
-    
 )
 
 from retinanet.augmentation import (
@@ -36,7 +37,8 @@ from retinanet.augmentation import (
     RandomShapren,
     RandomGaussianBlur,
     RandAugment,
-    get_aug_map,)
+    get_aug_map,
+)
 from retinanet.utils import get_logger
 from torch.utils.data import DataLoader
 
@@ -72,8 +74,17 @@ def main(args=None):
         "--num-workers", type=int, help="number of workers for dataloader mp", default=0
     )
     parser.add_argument("--logdir", type=str, help="path to save the logs and checkpoints")
+
+    parser.add_argument("--plot", action="store_true", help="whether to plot images in tensorboard")
+    parser.add_argument(
+        "--nsr", type=float, default=None, help="whether to use negative sampling of images"
+    )
+
     parser.add_argument('--augs', help="available augs:rand,hflip,rotate,shear,brightness,contrast,hue,gamma,saturation,sharpen,gblur should be seperated by spaces.",nargs='+')
-    parser.add_argument('--augs-prob', type=float, help="probability of applying augmentation in range [0.,1.]")
+    parser.add_argument(
+        "--augs-prob", type=float, help="probability of applying augmentation in range [0.,1.]"
+    )
+
     parser = parser.parse_args(args)
 
     try:
@@ -95,11 +106,11 @@ def main(args=None):
 
         # if parser.coco_path is None:
         #     raise ValueError("Must provide --coco_path when training on COCO,")
-        train_transforms=[Normalizer()]
+        train_transforms = [Normalizer()]
         if parser.augs is None:
             train_transforms.append(Resizer())
         else:
-            p=0.5
+            p = 0.5
             if parser.augs_prob is not None:
                 p = parser.augs_prob
             aug_map = get_aug_map(p=p)
@@ -111,10 +122,11 @@ def main(args=None):
             train_transforms.append(Resizer())
 
         if len(train_transforms) == 2:
-            logger.info("Not applying any special augmentations, using only {}".format(train_transforms))
+            logger.info(
+                "Not applying any special augmentations, using only {}".format(train_transforms)
+            )
         else:
-            logger.info("Applying augmentations {} with probability {}".format(train_transforms,p))
-
+            logger.info("Applying augmentations {} with probability {}".format(train_transforms, p))
 
         dataset_train = CocoDataset(
             parser.image_dir,
@@ -155,10 +167,30 @@ def main(args=None):
     else:
         raise ValueError("Dataset type not understood (must be csv or coco), exiting.")
 
-    sampler = AspectRatioBasedSampler(dataset_train, batch_size=parser.batch_size, drop_last=False)
-    dataloader_train = DataLoader(
-        dataset_train, num_workers=parser.num_workers, collate_fn=collater, batch_sampler=sampler
-    )
+    if parser.nsr is not None:
+        logger.info(f"using WeightedRandomSampler with negative (image) sample rate = {parser.nsr}")
+        weighted_sampler = WeightedRandomSampler(
+            dataset_train.weights, len(dataset_train), replacement=True
+        )
+        dataloader_train = DataLoader(
+            dataset_train,
+            num_workers=parser.num_workers,
+            collate_fn=collater,
+            sampler=weighted_sampler,
+            batch_size=parser.batch_size,
+            pin_memory=True,
+        )
+
+    else:
+        sampler = AspectRatioBasedSampler(
+            dataset_train, batch_size=parser.batch_size, drop_last=False
+        )
+        dataloader_train = DataLoader(
+            dataset_train,
+            num_workers=parser.num_workers,
+            collate_fn=collater,
+            batch_sampler=sampler,
+        )
 
     if dataset_val is not None:
         sampler_val = AspectRatioBasedSampler(
@@ -215,8 +247,13 @@ def main(args=None):
     retinanet.training = True
 
     optimizer = optim.Adam(retinanet.parameters(), lr=1e-5)
+    # optimizer = optim.SGD(retinanet.parameters(), lr=0.0001, momentum=0.95)
 
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=parser.epochs, eta_min=1e-6)
+    # scheduler_warmup = GradualWarmupScheduler(
+    #     optimizer, multiplier=100, total_epoch=5, after_scheduler=scheduler
+    # )
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
     # scheduler = optim.lr_scheduler.OneCycleLR(
     #     optimizer,
     #     max_lr=1e-4,
@@ -234,8 +271,9 @@ def main(args=None):
 
     # scaler = amp.GradScaler()
     best_map = 0
+    n_iter = 0
     for epoch_num in range(parser.epochs):
-
+        # scheduler_warmup.step(epoch_num)
         retinanet.train()
         retinanet.module.freeze_bn()
 
@@ -254,14 +292,14 @@ def main(args=None):
                     classification_loss, regression_loss = retinanet(
                         [data["img"].float(), data["annot"]]
                     )
-
+                n_iter = epoch_num * len(dataloader_train) + iter_num
                 classification_loss = classification_loss.mean()
                 regression_loss = regression_loss.mean()
 
                 loss = classification_loss + regression_loss
                 for param_group in optimizer.param_groups:
                     lr = param_group["lr"]
-                writer.add_scalar("Learning rate", lr, epoch_num * len(dataloader_train) + iter_num)
+                writer.add_scalar("Learning rate", lr, n_iter)
                 pbar_desc = f"Epoch: {epoch_num} | lr = {lr:0.6f} | batch: {iter_num} | cls: {classification_loss:.4f} | reg: {regression_loss:.4f}"
                 pbar.set_description(pbar_desc)
                 pbar.update(1)
@@ -280,17 +318,6 @@ def main(args=None):
                 loss_hist.append(float(loss))
 
                 epoch_loss.append(float(loss))
-                # scaler.update()
-                # if iter_num % 50 == 0:
-                #     logger.info(
-                #         "Epoch: {} | Iteration: {} | Classification loss: {:1.5f} | Regression loss: {:1.5f} | Running loss: {:1.5f}".format(
-                #             epoch_num,
-                #             iter_num,
-                #             float(classification_loss),
-                #             float(regression_loss),
-                #             np.mean(loss_hist),
-                #         )
-                #     )
 
                 del classification_loss
                 del regression_loss
@@ -301,9 +328,21 @@ def main(args=None):
         if parser.dataset == "coco":
 
             # print("Evaluating dataset")
-            stats = coco_eval.evaluate_coco(
-                dataset_val, retinanet, parser.logdir, parser.batch_size, parser.num_workers
-            )
+            if parser.plot:
+                stats = coco_eval.evaluate_coco(
+                    dataset_val,
+                    retinanet,
+                    parser.logdir,
+                    parser.batch_size,
+                    parser.num_workers,
+                    writer,
+                    n_iter,
+                )
+            else:
+                stats = coco_eval.evaluate_coco(
+                    dataset_val, retinanet, parser.logdir, parser.batch_size, parser.num_workers
+                )
+
             map_avg, map_50, map_75, map_small = stats[:4]
             if map_50 > best_map:
                 torch.save(
@@ -324,8 +363,8 @@ def main(args=None):
 
             mAP = csv_eval.evaluate(dataset_val, retinanet)
 
-        scheduler.step(np.mean(epoch_loss))
-
+        # scheduler.step(np.mean(epoch_loss))
+        scheduler.step()
         # torch.save(retinanet.module, os.path.join(parser.logdir, f"retinanet_{epoch_num}.pt"))
 
     retinanet.eval()
