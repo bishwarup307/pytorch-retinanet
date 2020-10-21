@@ -47,6 +47,9 @@ from retinanet import csv_eval
 
 assert torch.__version__.split(".")[0] == "1"
 
+torch.backends.cudnn.enabled = True
+torch.backends.cudnn.benchmark = True
+
 
 def main(args=None):
     parser = argparse.ArgumentParser(
@@ -205,7 +208,7 @@ def main(args=None):
             collate_fn=collater,
             sampler=weighted_sampler,
             batch_size=parser.batch_size,
-            pin_memory=True,
+            # pin_memory=True,
         )
 
     else:
@@ -257,7 +260,7 @@ def main(args=None):
     use_gpu = True
 
     if torch.cuda.is_available():
-        torch.cuda.set_device(0)
+        torch.cuda.set_device(torch.device("cuda:0"))
 
     # swav = torch.load("/home/bishwarup/Desktop/swav_ckp-50.pth", map_location=torch.device("cpu"))[
     #     "state_dict"
@@ -312,6 +315,9 @@ def main(args=None):
     # scaler = amp.GradScaler()
     best_map = 0
     n_iter = 0
+
+    scaler = amp.GradScaler(enabled=True)
+
     for epoch_num in range(parser.epochs):
         # scheduler_warmup.step(epoch_num)
         retinanet.train()
@@ -325,10 +331,10 @@ def main(args=None):
                 optimizer.zero_grad()
 
                 if torch.cuda.is_available():
-                    # with amp.autocast():
-                    classification_loss, regression_loss = retinanet(
-                        [data["img"].cuda().float(), data["annot"].cuda()]
-                    )
+                    with amp.autocast():
+                        classification_loss, regression_loss = retinanet(
+                            [data["img"].cuda().float(), data["annot"].cuda()]
+                        )
                 else:
                     classification_loss, regression_loss = retinanet(
                         [data["img"].float(), data["annot"]]
@@ -347,14 +353,15 @@ def main(args=None):
                 if bool(loss == 0):
                     continue
 
-                loss.backward()
-                # scaler.scale(loss).backward()
+                # loss.backward()
+                scaler.scale(loss).backward()
 
                 torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
 
-                optimizer.step()
+                # optimizer.step()
                 # scheduler.step()  # one cycle lr operates at batch level
-                # scaler.step(optimizer)
+                scaler.step(optimizer)
+                scaler.update()
 
                 loss_hist.append(float(loss))
 
