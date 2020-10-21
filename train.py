@@ -69,24 +69,22 @@ def main(args=None):
         "--depth", help="Resnet depth, must be one of 18, 34, 50, 101, 152", type=int, default=50
     )
     parser.add_argument("--epochs", help="Number of epochs", type=int, default=100)
-    parser.add_argument("--batch-size", type=int, help="batch_size", default=1)
+    parser.add_argument("--batch-size", type=int, help="batch_size", default=8)
     parser.add_argument(
         "--num-workers", type=int, help="number of workers for dataloader mp", default=0
     )
     parser.add_argument("--logdir", type=str, help="path to save the logs and checkpoints")
+
     parser.add_argument("--plot", action="store_true", help="whether to plot images in tensorboard")
     parser.add_argument(
         "--nsr", type=float, default=None, help="whether to use negative sampling of images"
     )
 
-    parser.add_argument(
-        "--augs",
-        help="possible values:rand,hflip,rotate,shear,brightness,contrast,hue,gamma,saturation",
-        nargs="+",
-    )
+    parser.add_argument('--augs', help="available augs:rand,hflip,rotate,shear,brightness,contrast,hue,gamma,saturation,sharpen,gblur should be seperated by spaces.",nargs='+')
     parser.add_argument(
         "--augs-prob", type=float, help="probability of applying augmentation in range [0.,1.]"
     )
+
     parser = parser.parse_args(args)
 
     try:
