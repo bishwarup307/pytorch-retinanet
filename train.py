@@ -327,7 +327,7 @@ def main(args=None):
                 if torch.cuda.is_available():
                     # with amp.autocast():
                     classification_loss, regression_loss = retinanet(
-                        [data["img"].cuda().float(), data["annot"]]
+                        [data["img"].cuda().float(), data["annot"].cuda()]
                     )
                 else:
                     classification_loss, regression_loss = retinanet(
