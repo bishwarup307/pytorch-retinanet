@@ -33,7 +33,9 @@ class ColorFormatter(logging.Formatter):
 
 
 def get_logger(
-    name, filepath: Optional[Union[str, os.PathLike]] = None, level: Optional[str] = "debug"
+    name,
+    filepath: Optional[Union[str, os.PathLike]] = None,
+    level: Optional[str] = "debug",
 ):
     log_level = {"info": logging.INFO, "debug": logging.DEBUG, "error": logging.ERROR}
 
@@ -57,7 +59,9 @@ def get_logger(
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False)
+    return nn.Conv2d(
+        in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False
+    )
 
 
 class BasicBlock(nn.Module):
@@ -99,7 +103,9 @@ class Bottleneck(nn.Module):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(
+            planes, planes, kernel_size=3, stride=stride, padding=1, bias=False
+        )
         self.bn2 = nn.BatchNorm2d(planes)
         self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(planes * 4)
@@ -135,7 +141,9 @@ class BBoxTransform(nn.Module):
         super(BBoxTransform, self).__init__()
         if mean is None:
             if torch.cuda.is_available():
-                self.mean = torch.from_numpy(np.array([0, 0, 0, 0]).astype(np.float32)).cuda()
+                self.mean = torch.from_numpy(
+                    np.array([0, 0, 0, 0]).astype(np.float32)
+                ).cuda()
             else:
                 self.mean = torch.from_numpy(np.array([0, 0, 0, 0]).astype(np.float32))
 
@@ -147,7 +155,9 @@ class BBoxTransform(nn.Module):
                     np.array([0.1, 0.1, 0.2, 0.2]).astype(np.float32)
                 ).cuda()
             else:
-                self.std = torch.from_numpy(np.array([0.1, 0.1, 0.2, 0.2]).astype(np.float32))
+                self.std = torch.from_numpy(
+                    np.array([0.1, 0.1, 0.2, 0.2]).astype(np.float32)
+                )
         else:
             self.std = std
 
@@ -195,3 +205,22 @@ class ClipBoxes(nn.Module):
         boxes[:, :, 3] = torch.clamp(boxes[:, :, 3], max=height)
 
         return boxes
+
+
+class AverageMeter(object):
+    """computes and stores the average and current value"""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
