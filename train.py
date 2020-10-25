@@ -6,6 +6,7 @@ import numpy as np
 import os
 from tqdm import tqdm
 import logging
+import json
 import colorama
 import torch
 import torch.optim as optim
@@ -24,6 +25,7 @@ from retinanet.dataloader import (
     CocoDataset,
     CSVDataset,
     collater,
+    eval_collate,
     Resizer,
     AspectRatioBasedSampler,
     Augmenter,
@@ -79,7 +81,10 @@ def init_distributed_mode(args):
 
     # prepare distributed
     dist.init_process_group(
-        backend="nccl", init_method=args.dist_url, world_size=args.world_size, rank=args.rank,
+        backend="nccl",
+        init_method=args.dist_url,
+        world_size=args.world_size,
+        rank=args.rank,
     )
 
     # set cuda device
@@ -88,73 +93,138 @@ def init_distributed_mode(args):
     return
 
 
-parser = argparse.ArgumentParser(
-    description="Simple training script for training a RetinaNet network."
-)
-parser.add_argument("--dataset", help="Dataset type, must be one of csv or coco.")
-parser.add_argument("--train-json-path", help="Path to COCO directory")
-parser.add_argument("--val-json-path", help="Path to COCO directory")
-parser.add_argument("--image-dir", help="Path to the images")
-parser.add_argument("--csv_train", help="Path to file containing training annotations (see readme)")
-parser.add_argument("--csv_classes", help="Path to file containing class list (see readme)")
-parser.add_argument(
-    "--csv_val", help="Path to file containing validation annotations (optional, see readme)",
-)
+def parse():
+    parser = argparse.ArgumentParser(
+        description="Simple training script for training a RetinaNet network."
+    )
+    parser.add_argument("--dataset", help="Dataset type, must be one of csv or coco.")
+    parser.add_argument("--train-json-path", help="Path to COCO directory")
+    parser.add_argument("--val-json-path", help="Path to COCO directory")
+    parser.add_argument("--image-dir", help="Path to the images")
+    parser.add_argument(
+        "--csv_train", help="Path to file containing training annotations (see readme)"
+    )
+    parser.add_argument(
+        "--csv_classes", help="Path to file containing class list (see readme)"
+    )
+    parser.add_argument(
+        "--csv_val",
+        help="Path to file containing validation annotations (optional, see readme)",
+    )
 
-parser.add_argument(
-    "--depth", help="Resnet depth, must be one of 18, 34, 50, 101, 152", type=int, default=50,
-)
-parser.add_argument("--epochs", help="Number of epochs", type=int, default=100)
-parser.add_argument("--batch-size", type=int, help="batch_size", default=8)
-parser.add_argument(
-    "--num-workers", type=int, help="number of workers for dataloader mp", default=0
-)
-parser.add_argument("--logdir", type=str, help="path to save the logs and checkpoints")
+    parser.add_argument(
+        "--depth",
+        help="Resnet depth, must be one of 18, 34, 50, 101, 152",
+        type=int,
+        default=50,
+    )
+    parser.add_argument("--epochs", help="Number of epochs", type=int, default=100)
+    parser.add_argument("--batch-size", type=int, help="batch_size", default=8)
+    parser.add_argument(
+        "--num-workers", type=int, help="number of workers for dataloader mp", default=0
+    )
+    parser.add_argument(
+        "--logdir", type=str, help="path to save the logs and checkpoints"
+    )
 
-parser.add_argument("--plot", action="store_true", help="whether to plot images in tensorboard")
-parser.add_argument(
-    "--nsr", type=float, default=None, help="whether to use negative sampling of images",
-)
+    parser.add_argument(
+        "--plot", action="store_true", help="whether to plot images in tensorboard"
+    )
+    parser.add_argument(
+        "--nsr",
+        type=float,
+        default=None,
+        help="whether to use negative sampling of images",
+    )
 
-parser.add_argument(
-    "--augs",
-    help="available augs:rand,hflip,rotate,shear,brightness,contrast,hue,gamma,saturation,sharpen,gblur should be seperated by spaces.",
-    nargs="+",
-)
-parser.add_argument(
-    "--augs-prob", type=float, help="probability of applying augmentation in range [0.,1.]",
-)
+    parser.add_argument(
+        "--augs",
+        help="available augs:rand,hflip,rotate,shear,brightness,contrast,hue,gamma,saturation,sharpen,gblur should be seperated by spaces.",
+        nargs="+",
+    )
+    parser.add_argument(
+        "--augs-prob",
+        type=float,
+        help="probability of applying augmentation in range [0.,1.]",
+    )
 
-parser.add_argument(
-    "--dist_url",
-    default="env://",
-    type=str,
-    help="""url used to set up distributed
-                    training; see https://pytorch.org/docs/stable/distributed.html""",
-)
-parser.add_argument(
-    "--world_size",
-    default=-1,
-    type=int,
-    help="""
-                    number of processes: it is set automatically and
-                    should not be passed as argument""",
-)
-parser.add_argument(
-    "--rank",
-    default=0,
-    type=int,
-    help="""rank of this process:
-                    it is set automatically and should not be passed as argument""",
-)
-parser.add_argument(
-    "--local_rank", default=0, type=int, help="this argument is not used and should be ignored"
-)
+    parser.add_argument(
+        "--dist_url",
+        default="env://",
+        type=str,
+        help="""url used to set up distributed
+                        training; see https://pytorch.org/docs/stable/distributed.html""",
+    )
+    parser.add_argument(
+        "--world_size",
+        default=-1,
+        type=int,
+        help="""
+                        number of processes: it is set automatically and
+                        should not be passed as argument""",
+    )
+    parser.add_argument(
+        "--rank",
+        default=0,
+        type=int,
+        help="""rank of this process:
+                        it is set automatically and should not be passed as argument""",
+    )
+    parser.add_argument(
+        "--local_rank",
+        default=0,
+        type=int,
+        help="this argument is not used and should be ignored",
+    )
+    return parser
+
+
+def validate(model, dataset, valid_loader):
+    model.eval()
+
+    for i, (images, labels, scales, image_ids) in tqdm(
+        enumerate(valid_loader), total=len(valid_loader), leave=False
+    ):
+
+        val_image_ids.extend(image_ids)
+        # logger.debug(Fore.YELLOW + f"batch id = {i}" + Style.RESET_ALL)
+        # logger.debug(image_ids)
+
+        with torch.no_grad():
+            img_idx, confs, classes, bboxes = model(images.float().cuda())
+        img_idx = img_idx.cpu().numpy()
+        confs = confs.cpu().numpy()
+        classes = classes.cpu().numpy()
+        bboxes = bboxes.cpu().numpy().astype(np.int32)
+
+        if len(img_idx):
+            # logger.debug(f"len(img_idx) = {len(img_idx)}")
+            # logger.debug(f"img_idx = {img_idx}")
+
+            bboxes[:, 2] -= bboxes[:, 0]
+            bboxes[:, 3] -= bboxes[:, 1]
+
+            for j, idx in enumerate(img_idx):
+                imid = image_ids[idx]
+                scale = scales[idx]
+                score = confs[j]
+                class_index = classes[j]
+                bbox = bboxes[j] / scale
+
+                image_result = {
+                    "image_id": imid,
+                    "category_id": dataset.label_to_coco_label(class_index),
+                    "score": float(score),
+                    "bbox": bbox.tolist(),
+                }
+                results.append(image_result)
+    model.train()
 
 
 def main():
-    global args
-    args = parser.parse_args()
+    global args, results, val_image_ids
+
+    args = parse().parse_args()
 
     try:
         os.makedirs(args.logdir, exist_ok=True)
@@ -175,8 +245,9 @@ def main():
     writer = SummaryWriter(logdir=args.logdir)
 
     ## print out basic info
-    logger.info("CUDA available: {}".format(torch.cuda.is_available()))
-    logger.info(f"torch.__version__ = {torch.__version__}")
+    if args.rank == 0:
+        logger.info("CUDA available: {}".format(torch.cuda.is_available()))
+        logger.info(f"torch.__version__ = {torch.__version__}")
 
     # Create the data loaders
     if args.dataset == "coco":
@@ -198,21 +269,24 @@ def main():
                     logger.info(f"{aug} is not available.")
             train_transforms.append(Resizer())
 
-        if len(train_transforms) == 2:
-            logger.info(
-                "Not applying any special augmentations, using only {}".format(train_transforms)
-            )
-        else:
-            logger.info("Applying augmentations {} with probability {}".format(train_transforms, p))
+        if args.rank == 0:
+            if len(train_transforms) == 2:
+                logger.info(
+                    "Not applying any special augmentations, using only {}".format(
+                        train_transforms
+                    )
+                )
+            else:
+                logger.info(
+                    "Applying augmentations {} with probability {}".format(
+                        train_transforms, p
+                    )
+                )
 
         dataset_train = CocoDataset(
-            args.image_dir, args.train_json_path, transform=transforms.Compose(train_transforms),
-        )
-        dataset_val = CocoDataset(
             args.image_dir,
-            args.val_json_path,
-            transform=transforms.Compose([Normalizer(), Resizer()]),
-            return_ids=True,
+            args.train_json_path,
+            transform=transforms.Compose(train_transforms),
         )
 
     elif args.dataset == "csv":
@@ -253,7 +327,9 @@ def main():
         )
 
     elif args.nsr is not None:
-        logger.info(f"using WeightedRandomSampler with negative (image) sample rate = {args.nsr}")
+        logger.info(
+            f"using WeightedRandomSampler with negative (image) sample rate = {args.nsr}"
+        )
         weighted_sampler = WeightedRandomSampler(
             dataset_train.weights, len(dataset_train), replacement=True
         )
@@ -271,31 +347,41 @@ def main():
             dataset_train, batch_size=args.batch_size, drop_last=False
         )
         dataloader_train = DataLoader(
-            dataset_train, num_workers=args.num_workers, collate_fn=collater, batch_sampler=sampler,
-        )
-
-    if dataset_val is not None:
-        sampler_val = AspectRatioBasedSampler(
-            dataset_val, batch_size=args.batch_size, drop_last=False
-        )
-        dataloader_val = DataLoader(
-            dataset_val,
+            dataset_train,
             num_workers=args.num_workers,
             collate_fn=collater,
-            batch_sampler=sampler_val,
+            batch_sampler=sampler,
+        )
+
+    if args.val_json_path is not None:
+        dataset_val = CocoDataset(
+            args.image_dir,
+            args.val_json_path,
+            transform=transforms.Compose([Normalizer(), Resizer()]),
+            return_ids=True,
         )
 
     # Create the model
     if args.depth == 18:
-        retinanet = model.resnet18(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet18(
+            num_classes=dataset_train.num_classes, pretrained=True
+        )
     elif args.depth == 34:
-        retinanet = model.resnet34(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet34(
+            num_classes=dataset_train.num_classes, pretrained=True
+        )
     elif args.depth == 50:
-        retinanet = model.resnet50(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet50(
+            num_classes=dataset_train.num_classes, pretrained=True
+        )
     elif args.depth == 101:
-        retinanet = model.resnet101(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet101(
+            num_classes=dataset_train.num_classes, pretrained=True
+        )
     elif args.depth == 152:
-        retinanet = model.resnet152(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet152(
+            num_classes=dataset_train.num_classes, pretrained=True
+        )
     else:
         raise ValueError("Unsupported model depth, must be one of 18, 34, 50, 101, 152")
 
@@ -335,7 +421,9 @@ def main():
     optimizer = optim.Adam(retinanet.parameters(), lr=1e-5)
     # optimizer = optim.SGD(retinanet.parameters(), lr=0.0001, momentum=0.95)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=args.epochs, eta_min=1e-6
+    )
 
     if distributed and dist.is_available():
         retinanet = nn.parallel.DistributedDataParallel(
@@ -363,10 +451,13 @@ def main():
         retinanet.train()
         retinanet.freeze_bn()
     # retinanet.module.freeze_bn()
-
-    logger.info("Num training images: {}".format(len(dataset_train)))
+    if args.rank == 0:
+        logger.info("Number of training images: {}".format(len(dataset_train)))
+        if dataset_val is not None:
+            logger.info("Number of validation images: {}".format(len(dataset_val)))
 
     # scaler = amp.GradScaler()
+    global best_map
     best_map = 0
     n_iter = 0
 
@@ -385,7 +476,12 @@ def main():
         # retinanet.module.freeze_bn()
 
         epoch_loss = []
-        pbar = tqdm(enumerate(dataloader_train), total=len(dataloader_train))
+        results = []
+        val_image_ids = []
+
+        pbar = tqdm(
+            enumerate(dataloader_train), total=len(dataloader_train), leave=False
+        )
         for iter_num, data in pbar:
             try:
                 optimizer.zero_grad()
@@ -438,35 +534,81 @@ def main():
         if args.dataset == "coco":
 
             # print("Evaluating dataset")
-            if args.plot:
-                stats = coco_eval.evaluate_coco(
-                    dataset_val,
-                    retinanet,
-                    args.logdir,
-                    args.batch_size,
-                    args.num_workers,
-                    writer,
-                    n_iter,
-                )
-            else:
-                stats = coco_eval.evaluate_coco(
-                    dataset_val, retinanet, args.logdir, args.batch_size, args.num_workers,
-                )
+            # if args.plot:
+            #     stats = coco_eval.evaluate_coco(
+            #         dataset_val,
+            #         retinanet,
+            #         args.logdir,
+            #         args.batch_size,
+            #         args.num_workers,
+            #         writer,
+            #         n_iter,
+            #     )
+            # else:
+            #     stats = coco_eval.evaluate_coco(
+            #         dataset_val,
+            #         retinanet,
+            #         args.logdir,
+            #         args.batch_size,
+            #         args.num_workers,
+            #     )
+            if len(dataset_val) > 0:
+                if dist.is_available() and distributed:
+                    sampler_val = DistributedSampler(dataset_val)
+                    dataloader_val = DataLoader(
+                        dataset_val,
+                        sampler=sampler_val,
+                        batch_size=args.batch_size,
+                        num_workers=args.num_workers,
+                        collate_fn=eval_collate,
+                        pin_memory=True,
+                    )
+                else:
+                    valid_loader = DataLoader(
+                        dataset,
+                        batch_size=args.batch_size,
+                        num_workers=args.num_workers,
+                        collate_fn=eval_collate,
+                        pin_memory=True,
+                        drop_last=False,
+                    )
 
-            map_avg, map_50, map_75, map_small = stats[:4]
-            # if args.rank
-            if map_50 > best_map:
-                torch.save(
-                    retinanet, os.path.join(args.logdir, f"retinanet_resnet50_best.pt"),
+            validate(retinanet, dataset_val, dataloader_val)
+
+            if args.rank == 0:
+                if len(results):
+                    with open(
+                        os.path.join(args.logdir, "val_bbox_results.json"), "w"
+                    ) as f:
+                        json.dump(results, f, indent=4)
+                    stats = coco_eval.evaluate_coco(
+                        dataset_val, val_image_ids, args.logdir
+                    )
+                    map_avg, map_50, map_75, map_small = stats[:4]
+                else:
+                    map_avg, map_50, map_75, map_small = [-1] * 4
+
+                if map_50 > best_map:
+                    torch.save(
+                        retinanet,
+                        os.path.join(args.logdir, f"retinanet_resnet50_best.pt"),
+                    )
+                    best_map = map_50
+                writer.add_scalar(
+                    "eval/map@0.5:0.95", map_avg, epoch_num * len(dataloader_train)
                 )
-                best_map = map_50
-            writer.add_scalar("eval/map@0.5:0.95", map_avg, epoch_num * len(dataloader_train))
-            writer.add_scalar("eval/map@0.5", map_50, epoch_num * len(dataloader_train))
-            writer.add_scalar("eval/map@0.75", map_75, epoch_num * len(dataloader_train))
-            writer.add_scalar("eval/map_small", map_small, epoch_num * len(dataloader_train))
-            logger.info(
-                f"Epoch: {epoch_num} | lr = {lr:.6f} |map@0.5:0.95 = {map_avg:.4f} | map@0.5 = {map_50:.4f} | map@0.75 = {map_75:.4f} | map-small = {map_small:.4f}"
-            )
+                writer.add_scalar(
+                    "eval/map@0.5", map_50, epoch_num * len(dataloader_train)
+                )
+                writer.add_scalar(
+                    "eval/map@0.75", map_75, epoch_num * len(dataloader_train)
+                )
+                writer.add_scalar(
+                    "eval/map_small", map_small, epoch_num * len(dataloader_train)
+                )
+                logger.info(
+                    f"Epoch: {epoch_num} | lr = {lr:.6f} |map@0.5:0.95 = {map_avg:.4f} | map@0.5 = {map_50:.4f} | map@0.75 = {map_75:.4f} | map-small = {map_small:.4f}"
+                )
 
         elif args.dataset == "csv" and args.csv_val is not None:
 
