@@ -5,6 +5,7 @@ import time
 import numpy as np
 import os
 from tqdm import tqdm
+import math
 import logging
 import json
 import colorama
@@ -175,6 +176,17 @@ def parse():
         default=0,
         type=int,
         help="this argument is not used and should be ignored",
+    )
+    parser.add_argument(
+        "--base_lr", default=0.001, type=float, help="base learning rate"
+    )
+    parser.add_argument("--final_lr", type=float, default=0, help="final learning rate")
+    parser.add_argument("--wd", default=1e-6, type=float, help="weight decay")
+    parser.add_argument(
+        "--warmup_epochs", default=10, type=int, help="number of warmup epochs"
+    )
+    parser.add_argument(
+        "--start_warmup", default=0, type=float, help="initial warmup learning rate"
     )
     return parser
 
@@ -418,12 +430,38 @@ def main():
 
     retinanet.training = True
 
-    optimizer = optim.Adam(retinanet.parameters(), lr=1e-5)
+    optimizer = optim.Adam(retinanet.parameters(), lr=0.001)
+    # optimizer = torch.optim.SGD(
+    #     retinanet.parameters(), lr=4.2, momentum=0.9, weight_decay=1e-4,
+    # )
+    # optimizer = LARC(optimizer=optimizer, trust_coefficient=0.001, clip=False)
     # optimizer = optim.SGD(retinanet.parameters(), lr=0.0001, momentum=0.95)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=args.epochs, eta_min=1e-6
+    # scheduler = optim.lr_scheduler.CosineAnnealingLR(
+    #     optimizer, T_max=args.epochs, eta_min=1e-6
+    # )
+
+    warmup_lr_schedule = np.linspace(
+        args.start_warmup, args.base_lr, len(dataloader_train) * args.warmup_epochs
     )
+    iters = np.arange(len(dataloader_train) * (args.epochs - args.warmup_epochs))
+    cosine_lr_schedule = np.array(
+        [
+            args.final_lr
+            + 0.5
+            * (args.base_lr - args.final_lr)
+            * (
+                1
+                + math.cos(
+                    math.pi
+                    * t
+                    / (len(dataloader_train) * (args.epochs - args.warmup_epochs))
+                )
+            )
+            for t in iters
+        ]
+    )
+    lr_schedule = np.concatenate((warmup_lr_schedule, cosine_lr_schedule))
 
     if distributed and dist.is_available():
         retinanet = nn.parallel.DistributedDataParallel(
@@ -483,53 +521,55 @@ def main():
             enumerate(dataloader_train), total=len(dataloader_train), leave=False
         )
         for iter_num, data in pbar:
-            try:
-                optimizer.zero_grad()
+            n_iter = epoch_num * len(dataloader_train) + iter_num
 
-                if torch.cuda.is_available():
-                    with amp.autocast():
-                        classification_loss, regression_loss = retinanet(
-                            [data["img"].cuda().float(), data["annot"].cuda()]
-                        )
-                else:
+            for param_group in optimizer.param_groups:
+                lr = lr_schedule[n_iter]
+                param_group["lr"] = lr
+
+            optimizer.zero_grad()
+
+            if torch.cuda.is_available():
+                with amp.autocast():
                     classification_loss, regression_loss = retinanet(
-                        [data["img"].float(), data["annot"]]
+                        [data["img"].cuda().float(), data["annot"].cuda()]
                     )
-                n_iter = epoch_num * len(dataloader_train) + iter_num
-                classification_loss = classification_loss.mean()
-                regression_loss = regression_loss.mean()
+            else:
+                classification_loss, regression_loss = retinanet(
+                    [data["img"].float(), data["annot"]]
+                )
 
-                loss = classification_loss + regression_loss
-                for param_group in optimizer.param_groups:
-                    lr = param_group["lr"]
+            classification_loss = classification_loss.mean()
+            regression_loss = regression_loss.mean()
 
-                if args.rank == 0:
-                    writer.add_scalar("Learning rate", lr, n_iter)
-                pbar_desc = f"Epoch: {epoch_num} | lr = {lr:0.6f} | batch: {iter_num} | cls: {classification_loss:.4f} | reg: {regression_loss:.4f}"
-                pbar.set_description(pbar_desc)
-                pbar.update(1)
-                if bool(loss == 0):
-                    continue
+            loss = classification_loss + regression_loss
+            # for param_group in optimizer.param_groups:
+            #     lr = param_group["lr"]
 
-                # loss.backward()
-                scaler.scale(loss).backward()
-
-                torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
-
-                # optimizer.step()
-                # scheduler.step()  # one cycle lr operates at batch level
-                scaler.step(optimizer)
-                scaler.update()
-
-                loss_hist.append(float(loss))
-
-                epoch_loss.append(float(loss))
-
-                del classification_loss
-                del regression_loss
-            except Exception as e:
-                print(e)
+            if args.rank == 0:
+                writer.add_scalar("Learning rate", lr, n_iter)
+            pbar_desc = f"Epoch: {epoch_num} | lr = {lr:0.6f} | batch: {iter_num} | cls: {classification_loss:.4f} | reg: {regression_loss:.4f}"
+            pbar.set_description(pbar_desc)
+            pbar.update(1)
+            if bool(loss == 0):
                 continue
+
+            # loss.backward()
+            scaler.scale(loss).backward()
+
+            torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
+
+            # optimizer.step()
+            # scheduler.step()  # one cycle lr operates at batch level
+            scaler.step(optimizer)
+            scaler.update()
+
+            loss_hist.append(float(loss))
+
+            epoch_loss.append(float(loss))
+
+            del classification_loss
+            del regression_loss
 
         if args.dataset == "coco":
 
@@ -617,7 +657,7 @@ def main():
             mAP = csv_eval.evaluate(dataset_val, retinanet)
 
         # scheduler.step(np.mean(epoch_loss))
-        scheduler.step()
+        # scheduler.step()
         # torch.save(retinanet.module, os.path.join(args.logdir, f"retinanet_{epoch_num}.pt"))
 
     retinanet.eval()
