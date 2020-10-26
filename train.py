@@ -356,6 +356,8 @@ def main(args=None):
                 # loss.backward()
                 scaler.scale(loss).backward()
 
+                scaler.unscale_(optimizer)
+
                 torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
 
                 # optimizer.step()
