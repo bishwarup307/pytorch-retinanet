@@ -3,19 +3,30 @@
 This repository is an extenstion of the original repository [pytorch-retinanet](https://github.com/yhenon/pytorch-retinanet).
 
 ## New features:
-- [x] Batched NMS for faster evaluation
-- [x] Automatic Mixed Precision (AMP) training
-- [x] Distributed training
-    - [x] DataParallel (DP)
-    - [x] Distributed Data Parallel
-        - [x] LARC (borrowed from `apex`)
-- [x] Cosine LR schedule with warmup
-- [x] Batch inference
-- [x] Export to ONNX
-- [x] Tensorboard logging
-- [x] Explicit negative sampling at batch level through `WeightedRandomSampler`
-- [ ] MLFlow tracking of experiments
-- [ ] Add docker
+- ✅ Batched NMS for faster evaluation
+- ✅ Automatic Mixed Precision (AMP) training
+- ✅ Distributed training
+    - ✅ DataParallel (DP)
+    - ✅ Distributed Data Parallel
+    - ✅ LARC (borrowed from `apex`)
+- ✅ Augmentations
+    - ✅ Flip
+    - ✅ Rotate
+    - ✅ Shear
+    - ✅ Brightness
+    - ✅ Contrast
+    - ✅ Gamma
+    - ✅ Saturation
+    - ✅ Sharpen
+    - ✅ Gaussian Blur
+    - ⬜ RandAugment
+- ✅ Cosine LR schedule with warmup
+- ✅ Batch inference
+- ✅ Export to ONNX
+- ✅ Tensorboard logging
+- ✅ Explicit negative sampling at batch level through `WeightedRandomSampler`
+- ⬜ MLFlow tracking of experiments
+- ⬜ Add docker
 
 The above codebase is tested on:
 - python 3.6, 3.7, 3.8
