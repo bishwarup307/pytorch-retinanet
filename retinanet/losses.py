@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-
+eps = 1e-6
 def calc_iou(a, b):
     area = (b[:, 2] - b[:, 0]) * (b[:, 3] - b[:, 1])
 
@@ -22,7 +22,7 @@ def calc_iou(a, b):
 
     intersection = iw * ih
 
-    IoU = intersection / ua
+    IoU = intersection / (ua + eps)
 
     return IoU
 

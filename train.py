@@ -265,7 +265,8 @@ def main():
         distributed = True
         args.rank = 0
 
-    logger.info(f"distributed mode: {args.dist_mode if distributed else 'OFF'}")
+    if args.rank == 0:
+        logger.info(f"distributed mode: {args.dist_mode if distributed else 'OFF'}")
 
     writer = SummaryWriter(logdir=args.logdir)
 
@@ -307,7 +308,6 @@ def main():
                         train_transforms, p
                     )
                 )
-
         dataset_train = CocoDataset(
             args.image_dir,
             args.train_json_path,
@@ -416,7 +416,7 @@ def main():
     if torch.cuda.is_available():
         if dist.is_available() and distributed:
             if args.dist_mode == "DDP":
-                # retinanet = nn.SyncBatchNorm.convert_sync_batchnorm(retinanet)
+                retinanet = nn.SyncBatchNorm.convert_sync_batchnorm(retinanet)
                 retinanet = retinanet.cuda()
             elif args.dist_mode == "DP":
                 retinanet = torch.nn.DataParallel(retinanet).cuda()
@@ -566,7 +566,6 @@ def main():
 
             classification_loss = classification_loss.mean()
             regression_loss = regression_loss.mean()
-
             loss = classification_loss + regression_loss
             # for param_group in optimizer.param_groups:
             #     lr = param_group["lr"]
