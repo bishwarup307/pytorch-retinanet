@@ -140,24 +140,32 @@ class BBoxTransform(nn.Module):
     def __init__(self, mean=None, std=None):
         super(BBoxTransform, self).__init__()
         if mean is None:
-            if torch.cuda.is_available():
-                self.mean = torch.from_numpy(
-                    np.array([0, 0, 0, 0]).astype(np.float32)
-                ).cuda()
-            else:
-                self.mean = torch.from_numpy(np.array([0, 0, 0, 0]).astype(np.float32))
+            self.mean = nn.Parameter(
+                torch.from_numpy(np.array([0, 0, 0, 0]).astype(np.float32)),
+                requires_grad=False,
+            )
+            # if torch.cuda.is_available():
+            #     self.mean = torch.nn.Parameters(torch.from_numpy(
+            #         np.array([0, 0, 0, 0]).astype(np.float32)
+            #     ).cuda()
+            # else:
+            #     self.mean = torch.from_numpy(np.array([0, 0, 0, 0]).astype(np.float32))
 
         else:
             self.mean = mean
         if std is None:
-            if torch.cuda.is_available():
-                self.std = torch.from_numpy(
-                    np.array([0.1, 0.1, 0.2, 0.2]).astype(np.float32)
-                ).cuda()
-            else:
-                self.std = torch.from_numpy(
-                    np.array([0.1, 0.1, 0.2, 0.2]).astype(np.float32)
-                )
+            self.std = nn.Parameter(
+                torch.from_numpy(np.array([0.1, 0.1, 0.2, 0.2]).astype(np.float32)),
+                requires_grad=False,
+            )
+            # if torch.cuda.is_available():
+            #     self.std = torch.from_numpy(
+            #         np.array([0.1, 0.1, 0.2, 0.2]).astype(np.float32)
+            #     ).cuda()
+            # else:
+            #     self.std = torch.from_numpy(
+            #         np.array([0.1, 0.1, 0.2, 0.2]).astype(np.float32)
+            #     )
         else:
             self.std = std
 

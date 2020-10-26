@@ -188,6 +188,14 @@ def parse():
     parser.add_argument(
         "--start_warmup", default=0, type=float, help="initial warmup learning rate"
     )
+
+    parser.add_argument(
+        "--dist-mode",
+        type=str,
+        choices=["DP", "DDP"],
+        default="DDP",
+        help="whether to use DataParallel or DistributedDataParallel",
+    )
     return parser
 
 
@@ -195,7 +203,7 @@ def validate(model, dataset, valid_loader):
     model.eval()
 
     for i, (images, labels, scales, image_ids) in tqdm(
-        enumerate(valid_loader), total=len(valid_loader), leave=False
+        enumerate(valid_loader), total=len(valid_loader), leave=keep_pbar
     ):
 
         val_image_ids.extend(image_ids)
@@ -250,9 +258,14 @@ def main():
         init_distributed_mode(args)
         distributed = True
     except KeyError:
-        logger.info("Running in serial mode.")
         args.rank = 0
         distributed = False
+
+    if args.dist_mode == "DP":
+        distributed = True
+        args.rank = 0
+
+    logger.info(f"distributed mode: {args.dist_mode if distributed else 'OFF'}")
 
     writer = SummaryWriter(logdir=args.logdir)
 
@@ -328,7 +341,7 @@ def main():
     else:
         raise ValueError("Dataset type not understood (must be csv or coco), exiting.")
 
-    if dist.is_available() and distributed:
+    if dist.is_available() and distributed and args.dist_mode == "DDP":
         sampler = DistributedSampler(dataset_train)
         dataloader_train = DataLoader(
             dataset_train,
@@ -351,7 +364,7 @@ def main():
             collate_fn=collater,
             sampler=weighted_sampler,
             batch_size=args.batch_size,
-            # pin_memory=True,
+            pin_memory=True,
         )
 
     else:
@@ -363,6 +376,7 @@ def main():
             num_workers=args.num_workers,
             collate_fn=collater,
             batch_sampler=sampler,
+            pin_memory=True,
         )
 
     if args.val_json_path is not None:
@@ -401,8 +415,13 @@ def main():
 
     if torch.cuda.is_available():
         if dist.is_available() and distributed:
-            retinanet = nn.SyncBatchNorm.convert_sync_batchnorm(retinanet)
-            retinanet = retinanet.cuda()
+            if args.dist_mode == "DDP":
+                # retinanet = nn.SyncBatchNorm.convert_sync_batchnorm(retinanet)
+                retinanet = retinanet.cuda()
+            elif args.dist_mode == "DP":
+                retinanet = torch.nn.DataParallel(retinanet).cuda()
+            else:
+                raise NotImplementedError
         else:
             torch.cuda.set_device(torch.device("cuda:0"))
             retinanet = retinanet.cuda()
@@ -434,7 +453,10 @@ def main():
     # optimizer = torch.optim.SGD(
     #     retinanet.parameters(), lr=4.2, momentum=0.9, weight_decay=1e-4,
     # )
-    # optimizer = LARC(optimizer=optimizer, trust_coefficient=0.001, clip=False)
+
+    if dist.is_available() and distributed and args.dist_mode == "DDP":
+        optimizer = LARC(optimizer=optimizer, trust_coefficient=0.001, clip=True)
+
     # optimizer = optim.SGD(retinanet.parameters(), lr=0.0001, momentum=0.95)
 
     # scheduler = optim.lr_scheduler.CosineAnnealingLR(
@@ -463,7 +485,7 @@ def main():
     )
     lr_schedule = np.concatenate((warmup_lr_schedule, cosine_lr_schedule))
 
-    if distributed and dist.is_available():
+    if distributed and dist.is_available() and args.dist_mode == "DDP":
         retinanet = nn.parallel.DistributedDataParallel(
             retinanet, device_ids=[args.gpu_to_work_on], find_unused_parameters=True
         )
@@ -500,12 +522,15 @@ def main():
     n_iter = 0
 
     scaler = amp.GradScaler(enabled=True)
+    global keep_pbar
+    keep_pbar = not (distributed and args.dist_mode == "DDP")
 
     for epoch_num in range(args.epochs):
 
         # scheduler_warmup.step(epoch_num)
         if dist.is_available() and distributed:
-            dataloader_train.sampler.set_epoch(epoch_num)
+            if args.dist_mode == "DDP":
+                dataloader_train.sampler.set_epoch(epoch_num)
             retinanet.module.train()
             retinanet.module.freeze_bn()
         else:
@@ -518,7 +543,7 @@ def main():
         val_image_ids = []
 
         pbar = tqdm(
-            enumerate(dataloader_train), total=len(dataloader_train), leave=False
+            enumerate(dataloader_train), total=len(dataloader_train), leave=keep_pbar
         )
         for iter_num, data in pbar:
             n_iter = epoch_num * len(dataloader_train) + iter_num
@@ -557,6 +582,9 @@ def main():
             # loss.backward()
             scaler.scale(loss).backward()
 
+            # unscale the gradients for grad clipping
+            scaler.unscale_(optimizer)
+
             torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
 
             # optimizer.step()
@@ -593,7 +621,7 @@ def main():
             #         args.num_workers,
             #     )
             if len(dataset_val) > 0:
-                if dist.is_available() and distributed:
+                if dist.is_available() and distributed and args.dist_mode == "DDP":
                     sampler_val = DistributedSampler(dataset_val)
                     dataloader_val = DataLoader(
                         dataset_val,
@@ -604,8 +632,8 @@ def main():
                         pin_memory=True,
                     )
                 else:
-                    valid_loader = DataLoader(
-                        dataset,
+                    dataloader_val = DataLoader(
+                        dataset_val,
                         batch_size=args.batch_size,
                         num_workers=args.num_workers,
                         collate_fn=eval_collate,
