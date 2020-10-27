@@ -103,6 +103,9 @@ def parse():
     parser.add_argument("--val-json-path", help="Path to COCO directory")
     parser.add_argument("--image-dir", help="Path to the images")
     parser.add_argument(
+        "--val-image-dir", type=str, help="path to validation images", required=False
+    )
+    parser.add_argument(
         "--csv_train", help="Path to file containing training annotations (see readme)"
     )
     parser.add_argument(
@@ -196,6 +199,7 @@ def parse():
         default="DDP",
         help="whether to use DataParallel or DistributedDataParallel",
     )
+
     return parser
 
 
@@ -267,6 +271,11 @@ def main():
 
     if args.rank == 0:
         logger.info(f"distributed mode: {args.dist_mode if distributed else 'OFF'}")
+
+    if args.val_image_dir is None:
+        if args.rank == 0:
+            logger.info("No validation image directory specified, will assume the same image directory for train and val")
+        args.val_image_dir = args.image_dir
 
     writer = SummaryWriter(logdir=args.logdir)
 
@@ -381,7 +390,7 @@ def main():
 
     if args.val_json_path is not None:
         dataset_val = CocoDataset(
-            args.image_dir,
+            args.val_image_dir,
             args.val_json_path,
             transform=transforms.Compose([Normalizer(), Resizer()]),
             return_ids=True,
