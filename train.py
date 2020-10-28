@@ -274,7 +274,9 @@ def main():
 
     if args.val_image_dir is None:
         if args.rank == 0:
-            logger.info("No validation image directory specified, will assume the same image directory for train and val")
+            logger.info(
+                "No validation image directory specified, will assume the same image directory for train and val"
+            )
         args.val_image_dir = args.image_dir
 
     writer = SummaryWriter(logdir=args.logdir)
