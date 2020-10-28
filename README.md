@@ -19,7 +19,7 @@ This repository is an extenstion of the original repository [pytorch-retinanet](
     - ✅ Saturation
     - ✅ Sharpen
     - ✅ Gaussian Blur
-    - ⬜ RandAugment
+    - ✅ RandAugment
 - ✅ Cosine LR schedule with warmup
 - ✅ Batch inference
 - ✅ Export to ONNX
@@ -27,6 +27,7 @@ This repository is an extenstion of the original repository [pytorch-retinanet](
 - ✅ Explicit negative sampling at batch level through `WeightedRandomSampler`
 - ⬜ MLFlow tracking of experiments
 - ⬜ Add docker
+- ⬜ Resume from existing checkpoint
 
 The above codebase is tested on:
 - python 3.6, 3.7, 3.8
