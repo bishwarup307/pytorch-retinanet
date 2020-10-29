@@ -1,4 +1,4 @@
 {
-    "python.pythonPath": "/Users/bishwarupb/opt/anaconda3/envs/az/bin/python",
+    "python.pythonPath": "/home/bishwarup/anaconda3/envs/yolov5r3/bin/python",
     "python.formatting.provider": "black"
 }
