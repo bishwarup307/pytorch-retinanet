@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import random
 import csv
+import cv2
 import glob
 from torch.utils.data import Dataset, DataLoader
 import torchvision
@@ -25,9 +26,7 @@ from PIL import Image
 class CocoDataset(Dataset):
     """Coco dataset."""
 
-    def __init__(
-        self, image_dir, json_path, transform=None, return_ids=False, nsr=None
-    ):
+    def __init__(self, image_dir, json_path, transform=None, return_ids=False, nsr=None):
         """
         Args:
             root_dir (string): COCO directory.
@@ -107,9 +106,7 @@ class CocoDataset(Dataset):
 
     def load_annotations(self, image_index):
         # get ground truth annotations
-        annotations_ids = self.coco.getAnnIds(
-            imgIds=self.image_ids[image_index], iscrowd=False
-        )
+        annotations_ids = self.coco.getAnnIds(imgIds=self.image_ids[image_index], iscrowd=False)
         annotations = np.zeros((0, 5))
 
         # some images appear to miss annotations (like image with id 257034)
@@ -169,9 +166,7 @@ class CSVDataset(Dataset):
             with self._open_for_csv(self.class_list) as file:
                 self.classes = self.load_classes(csv.reader(file, delimiter=","))
         except ValueError as e:
-            raise (
-                ValueError("invalid CSV class file: {}: {}".format(self.class_list, e))
-            )
+            raise (ValueError("invalid CSV class file: {}: {}".format(self.class_list, e)))
 
         self.labels = {}
         for key, value in self.classes.items():
@@ -184,11 +179,7 @@ class CSVDataset(Dataset):
                     csv.reader(file, delimiter=","), self.classes
                 )
         except ValueError as e:
-            raise (
-                ValueError(
-                    "invalid CSV annotations file: {}: {}".format(self.train_file, e)
-                )
-            )
+            raise (ValueError("invalid CSV annotations file: {}: {}".format(self.train_file, e)))
         self.image_names = list(self.image_data.keys())
 
     def _parse(self, value, function, fmt):
@@ -223,19 +214,11 @@ class CSVDataset(Dataset):
             try:
                 class_name, class_id = row
             except ValueError:
-                raise (
-                    ValueError(
-                        "line {}: format should be 'class_name,class_id'".format(line)
-                    )
-                )
-            class_id = self._parse(
-                class_id, int, "line {}: malformed class ID: {{}}".format(line)
-            )
+                raise (ValueError("line {}: format should be 'class_name,class_id'".format(line)))
+            class_id = self._parse(class_id, int, "line {}: malformed class ID: {{}}".format(line))
 
             if class_name in result:
-                raise ValueError(
-                    "line {}: duplicate class name: '{}'".format(line, class_name)
-                )
+                raise ValueError("line {}: duplicate class name: '{}'".format(line, class_name))
             result[class_name] = class_id
         return result
 
@@ -339,9 +322,7 @@ class CSVDataset(Dataset):
                     )
                 )
 
-            result[img_file].append(
-                {"x1": x1, "x2": x2, "y1": y1, "y2": y2, "class": class_name}
-            )
+            result[img_file].append({"x1": x1, "x2": x2, "y1": y1, "y2": y2, "class": class_name})
         return result
 
     def name_to_label(self, name):
@@ -362,7 +343,7 @@ def collater(data):
 
     imgs = [s["img"] for s in data]
     annots = [s["annot"] for s in data]
-    scales = [s["scale"] for s in data]
+    # scales = [s["scale"] for s in data]
 
     widths = [int(s.shape[0]) for s in imgs]
     heights = [int(s.shape[1]) for s in imgs]
@@ -393,48 +374,84 @@ def collater(data):
 
     padded_imgs = padded_imgs.permute(0, 3, 1, 2)
 
-    return {"img": padded_imgs, "annot": annot_padded, "scale": scales}
+    return {"img": padded_imgs, "annot": annot_padded}
+
+
+def letterbox(image, expected_size, fill_value=0):
+    ih, iw, _ = image.shape
+    eh, ew = expected_size
+    scale = min(eh / ih, ew / iw)
+    nh = int(ih * scale)
+    nw = int(iw * scale)
+
+    image = cv2.resize(image, (nw, nh), interpolation=cv2.INTER_CUBIC)
+    # print(image)
+    new_img = np.full((eh, ew, 3), fill_value, dtype=np.float32)
+    # fill new image with the resized image and centered it
+
+    offset_x, offset_y = (ew - nw) // 2, (eh - nh) // 2
+
+    new_img[offset_y : offset_y + nh, offset_x : offset_x + nw, :] = image.copy()
+    return new_img, scale, offset_x, offset_y
 
 
 class Resizer(object):
     """Convert ndarrays in sample to Tensors."""
 
-    def __call__(self, sample, min_side=512, max_side=512):
+    def __init__(self, size):
+        self.size = size
+
+    def __call__(self, sample):
         image, annots = sample["img"], sample["annot"]
-
-        rows, cols, cns = image.shape
-
-        smallest_side = min(rows, cols)
-
-        # rescale the image so the smallest side is min_side
-        scale = min_side / smallest_side
-
-        # check if the largest side is now greater than max_side, which can happen
-        # when images have a large aspect ratio
-        largest_side = max(rows, cols)
-
-        if largest_side * scale > max_side:
-            scale = max_side / largest_side
-
-        # resize the image with the computed scale
-        image = skimage.transform.resize(
-            image, (int(round(rows * scale)), int(round((cols * scale))))
-        )
-        rows, cols, cns = image.shape
-
-        pad_w = (32 - rows % 32) % 32
-        pad_h = (32 - cols % 32) % 32
-
-        new_image = np.zeros((rows + pad_w, cols + pad_h, cns)).astype(np.float32)
-        new_image[:rows, :cols, :] = image.astype(np.float32)
+        rsz_img, scale, offset_x, offset_y = letterbox(image, self.size)
 
         annots[:, :4] *= scale
+        annots[:, 0] += offset_x
+        annots[:, 1] += offset_y
+        annots[:, 2] += offset_x
+        annots[:, 3] += offset_y
 
         return {
-            "img": torch.from_numpy(new_image),
+            "img": torch.from_numpy(rsz_img),
             "annot": torch.from_numpy(annots),
             "scale": scale,
+            "offset_x": offset_x,
+            "offset_y": offset_y,
         }
+
+        # rows, cols, cns = image.shape
+
+        # smallest_side = min(rows, cols)
+
+        # # rescale the image so the smallest side is min_side
+        # scale = min_side / smallest_side
+
+        # # check if the largest side is now greater than max_side, which can happen
+        # # when images have a large aspect ratio
+        # largest_side = max(rows, cols)
+
+        # if largest_side * scale > max_side:
+        #     scale = max_side / largest_side
+
+        # # resize the image with the computed scale
+        # image = skimage.transform.resize(
+        #     image, (int(round(rows * scale)), int(round((cols * scale))))
+        # )
+        # rows, cols, cns = image.shape
+
+        # pad_w = (32 - rows % 32) % 32
+        # pad_h = (32 - cols % 32) % 32
+
+        # new_image = np.zeros((rows + pad_w, cols + pad_h, cns)).astype(np.float32)
+        # new_image[:rows, :cols, :] = image.astype(np.float32)
+
+        # annots[:, :4] *= scale
+
+        # return {
+        #     "img": torch.from_numpy(new_image),
+        #     "annot": torch.from_numpy(annots),
+        #     "scale": scale,
+        # }
 
 
 class Augmenter(object):
@@ -563,17 +580,20 @@ def custom_collate(batch):
 
 
 def eval_collate(batch):
-    image_ids, images, labels, scales = [], [], [], []
+    image_ids, images, labels, scales, offset_x, offset_y = [], [], [], [], [], []
     for b in batch:
         instance, img_id = b
         images.append(instance["img"])
         labels.append(instance["annot"])
         scales.append(instance["scale"])
+        offset_x.append(instance["offset_x"])
+        offset_y.append(instance["offset_y"])
         image_ids.append(img_id)
     return (
         torch.stack(images).permute(0, 3, 1, 2).contiguous(),
         labels,
         scales,
+        offset_x,
+        offset_y,
         image_ids,
     )
-

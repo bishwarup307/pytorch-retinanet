@@ -1,3 +1,4 @@
+from typing import List, Union, Tuple, Optional
 import argparse
 import collections
 import copy
@@ -99,6 +100,12 @@ def parse():
     parser.add_argument(
         "--depth", help="Resnet depth, must be one of 18, 34, 50, 101, 152", type=int, default=50,
     )
+    parser.add_argument(
+        "--resize",
+        type=str,
+        help="training dimension of images, specify width and height separated by a comma if they differ, defaults to 512,512",
+        default="512",
+    )
     parser.add_argument("--epochs", help="Number of epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, help="batch_size", default=8)
     parser.add_argument(
@@ -164,10 +171,18 @@ def parse():
     return parser
 
 
+def parse_resize(resize_str: str) -> List[int]:
+    dims = resize_str.split(",")
+    dims = list(map(int, dims))
+    if len(dims) < 2:
+        dims.append(dims[0])
+    return dims
+
+
 def validate(model, dataset, valid_loader):
     model.eval()
 
-    for i, (images, labels, scales, image_ids) in tqdm(
+    for i, (images, labels, scales, offset_x, offset_y, image_ids) in tqdm(
         enumerate(valid_loader), total=len(valid_loader), leave=keep_pbar
     ):
 
@@ -192,9 +207,15 @@ def validate(model, dataset, valid_loader):
             for j, idx in enumerate(img_idx):
                 imid = image_ids[idx]
                 scale = scales[idx]
+                ox, oy = offset_x[idx], offset_y[idx]
                 score = confs[j]
                 class_index = classes[j]
-                bbox = bboxes[j] / scale
+                bbox = bboxes[j]
+                bbox[0] -= ox
+                bbox[1] -= oy
+                # bbox[2] -= ox
+                # bbox[3] -= oy
+                bbox = bbox / scale
 
                 image_result = {
                     "image_id": imid,
@@ -241,7 +262,9 @@ def main():
         args.val_image_dir = args.image_dir
 
     writer = SummaryWriter(logdir=args.logdir)
-
+    img_dim = parse_resize(args.resize)
+    if args.rank == 0:
+        logger.info(f"training image dimensions: {img_dim[0]},{img_dim[1]}")
     ## print out basic info
     if args.rank == 0:
         logger.info("CUDA available: {}".format(torch.cuda.is_available()))
@@ -253,8 +276,9 @@ def main():
         # if args.coco_path is None:
         #     raise ValueError("Must provide --coco_path when training on COCO,")
         train_transforms = [Normalizer()]
+
         if args.augs is None:
-            train_transforms.append(Resizer())
+            train_transforms.append(Resizer(img_dim))
         else:
             p = 0.5
             if args.augs_prob is not None:
@@ -265,7 +289,7 @@ def main():
                     train_transforms.append(aug_map[aug])
                 else:
                     logger.info(f"{aug} is not available.")
-            train_transforms.append(Resizer())
+            train_transforms.append(Resizer(img_dim))
 
         if args.rank == 0:
             if len(train_transforms) == 2:
@@ -347,7 +371,7 @@ def main():
         dataset_val = CocoDataset(
             args.val_image_dir,
             args.val_json_path,
-            transform=transforms.Compose([Normalizer(), Resizer()]),
+            transform=transforms.Compose([Normalizer(), Resizer(img_dim)]),
             return_ids=True,
         )
 
