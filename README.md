@@ -3,23 +3,24 @@
 This repository is an extenstion of the original repository [pytorch-retinanet](https://github.com/yhenon/pytorch-retinanet).
 
 ## New features:
+
 - ✅ Batched NMS for faster evaluation
 - ✅ Automatic Mixed Precision (AMP) training
 - ✅ Distributed training
-    - ✅ DataParallel (DP)
-    - ✅ Distributed Data Parallel
-    - ✅ LARC (borrowed from `apex`)
+  - ✅ DataParallel (DP)
+  - ✅ Distributed Data Parallel
+  - ✅ LARC (borrowed from `apex`)
 - ✅ Augmentations
-    - ✅ Flip
-    - ✅ Rotate
-    - ✅ Shear
-    - ✅ Brightness
-    - ✅ Contrast
-    - ✅ Gamma
-    - ✅ Saturation
-    - ✅ Sharpen
-    - ✅ Gaussian Blur
-    - ✅ RandAugment
+  - ✅ Flip
+  - ✅ Rotate
+  - ✅ Shear
+  - ✅ Brightness
+  - ✅ Contrast
+  - ✅ Gamma
+  - ✅ Saturation
+  - ✅ Sharpen
+  - ✅ Gaussian Blur
+  - ✅ RandAugment
 - ✅ Cosine LR schedule with warmup
 - ✅ Batch inference
 - ✅ Export to ONNX
@@ -30,6 +31,7 @@ This repository is an extenstion of the original repository [pytorch-retinanet](
 - ⬜ Resume from existing checkpoint
 
 The above codebase is tested on:
+
 - python 3.6, 3.7, 3.8
 - CUDA 10.2
 - CuDNN 8.0
@@ -40,6 +42,7 @@ The above codebase is tested on:
 ## Usage
 
 ### 1. Single GPU
+
 ```bash
 python train.py \
 --dataset coco \
@@ -53,9 +56,11 @@ python train.py \
 --base_lr 0.00001 \
 --logdir <path-to-logging-directory>
 ```
+
 If your dataset has images with empty annotations, you can choose to sample them in a certain raio at the batch level with the help of `--nsr` argument.
 
 ### 2. DataParallel (DP)
+
 ```bash
 python train.py \
 --dataset coco \
@@ -69,10 +74,13 @@ python train.py \
 --logdir <path-to-logging-directory>
 --dist-mode DP
 ```
+
 You need to uncomment line 270 in `retinanet/model.py` in order for DP to work properly
 
-### 3. DistributedDataParallel (DDP) 
+### 3. DistributedDataParallel (DDP)
+
 Ex: Single Node with 4 GPUs.
+
 ```bash
 python -m torch.distributed.launch --nproc_per_node=4 train.py \
 --dataset coco \
@@ -89,6 +97,7 @@ python -m torch.distributed.launch --nproc_per_node=4 train.py \
 For distributed training you need to `git checkout dist`.
 
 ## Run batch inference
+
 ```sh
 python predict.py \
 -i <path/to/test/images> \
@@ -101,6 +110,7 @@ python predict.py \
 ```
 
 ## Export to ONNX
+
 ```sh
 python export.py \
 --checkpoint <path/to/trained/checkpoint.pt>

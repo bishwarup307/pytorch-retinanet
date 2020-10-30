@@ -25,7 +25,9 @@ from PIL import Image
 class CocoDataset(Dataset):
     """Coco dataset."""
 
-    def __init__(self, image_dir, json_path, transform=None, return_ids=False, nsr=None):
+    def __init__(
+        self, image_dir, json_path, transform=None, return_ids=False, nsr=None
+    ):
         """
         Args:
             root_dir (string): COCO directory.
@@ -105,7 +107,9 @@ class CocoDataset(Dataset):
 
     def load_annotations(self, image_index):
         # get ground truth annotations
-        annotations_ids = self.coco.getAnnIds(imgIds=self.image_ids[image_index], iscrowd=False)
+        annotations_ids = self.coco.getAnnIds(
+            imgIds=self.image_ids[image_index], iscrowd=False
+        )
         annotations = np.zeros((0, 5))
 
         # some images appear to miss annotations (like image with id 257034)
@@ -165,7 +169,9 @@ class CSVDataset(Dataset):
             with self._open_for_csv(self.class_list) as file:
                 self.classes = self.load_classes(csv.reader(file, delimiter=","))
         except ValueError as e:
-            raise (ValueError("invalid CSV class file: {}: {}".format(self.class_list, e)))
+            raise (
+                ValueError("invalid CSV class file: {}: {}".format(self.class_list, e))
+            )
 
         self.labels = {}
         for key, value in self.classes.items():
@@ -178,7 +184,11 @@ class CSVDataset(Dataset):
                     csv.reader(file, delimiter=","), self.classes
                 )
         except ValueError as e:
-            raise (ValueError("invalid CSV annotations file: {}: {}".format(self.train_file, e)))
+            raise (
+                ValueError(
+                    "invalid CSV annotations file: {}: {}".format(self.train_file, e)
+                )
+            )
         self.image_names = list(self.image_data.keys())
 
     def _parse(self, value, function, fmt):
@@ -213,11 +223,19 @@ class CSVDataset(Dataset):
             try:
                 class_name, class_id = row
             except ValueError:
-                raise (ValueError("line {}: format should be 'class_name,class_id'".format(line)))
-            class_id = self._parse(class_id, int, "line {}: malformed class ID: {{}}".format(line))
+                raise (
+                    ValueError(
+                        "line {}: format should be 'class_name,class_id'".format(line)
+                    )
+                )
+            class_id = self._parse(
+                class_id, int, "line {}: malformed class ID: {{}}".format(line)
+            )
 
             if class_name in result:
-                raise ValueError("line {}: duplicate class name: '{}'".format(line, class_name))
+                raise ValueError(
+                    "line {}: duplicate class name: '{}'".format(line, class_name)
+                )
             result[class_name] = class_id
         return result
 
@@ -321,7 +339,9 @@ class CSVDataset(Dataset):
                     )
                 )
 
-            result[img_file].append({"x1": x1, "x2": x2, "y1": y1, "y2": y2, "class": class_name})
+            result[img_file].append(
+                {"x1": x1, "x2": x2, "y1": y1, "y2": y2, "class": class_name}
+            )
         return result
 
     def name_to_label(self, name):
@@ -450,7 +470,10 @@ class Normalizer(object):
 
         image, annots = sample["img"], sample["annot"]
 
-        return {"img": ((image.astype(np.float32) - self.mean) / self.std), "annot": annots}
+        return {
+            "img": ((image.astype(np.float32) - self.mean) / self.std),
+            "annot": annots,
+        }
 
 
 class UnNormalizer(object):
@@ -547,4 +570,10 @@ def eval_collate(batch):
         labels.append(instance["annot"])
         scales.append(instance["scale"])
         image_ids.append(img_id)
-    return torch.stack(images).permute(0, 3, 1, 2), labels, scales, image_ids
+    return (
+        torch.stack(images).permute(0, 3, 1, 2).contiguous(),
+        labels,
+        scales,
+        image_ids,
+    )
+
