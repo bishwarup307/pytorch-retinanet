@@ -102,3 +102,4 @@ ENV/
 *.zip
 *.pt
 *.pth
+.vscode/

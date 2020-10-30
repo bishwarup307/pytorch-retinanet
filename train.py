@@ -19,7 +19,6 @@ from torch.utils.data.sampler import WeightedRandomSampler
 from torch.utils.data.distributed import DistributedSampler
 from torchvision import transforms
 from tensorboardX import SummaryWriter
-from warmup_scheduler import GradualWarmupScheduler
 
 from retinanet import model
 from retinanet.dataloader import (
@@ -33,20 +32,7 @@ from retinanet.dataloader import (
     Normalizer,
 )
 
-from retinanet.augmentation import (
-    RandomHorizontalFlip,
-    RandomRotate,
-    RandomShear,
-    RandomBrightnessAdjust,
-    RandomContrastAdjust,
-    RandomGammaCorrection,
-    RandomSaturationAdjust,
-    RandomHueAdjust,
-    RandomShapren,
-    RandomGaussianBlur,
-    RandAugment,
-    get_aug_map,
-)
+from retinanet.augmentation import get_aug_map
 from retinanet.utils import get_logger, AverageMeter
 from retinanet.larc import LARC
 from retinanet import coco_eval
@@ -82,10 +68,7 @@ def init_distributed_mode(args):
 
     # prepare distributed
     dist.init_process_group(
-        backend="nccl",
-        init_method=args.dist_url,
-        world_size=args.world_size,
-        rank=args.rank,
+        backend="nccl", init_method=args.dist_url, world_size=args.world_size, rank=args.rank,
     )
 
     # set cuda device
@@ -108,37 +91,24 @@ def parse():
     parser.add_argument(
         "--csv_train", help="Path to file containing training annotations (see readme)"
     )
+    parser.add_argument("--csv_classes", help="Path to file containing class list (see readme)")
     parser.add_argument(
-        "--csv_classes", help="Path to file containing class list (see readme)"
-    )
-    parser.add_argument(
-        "--csv_val",
-        help="Path to file containing validation annotations (optional, see readme)",
+        "--csv_val", help="Path to file containing validation annotations (optional, see readme)",
     )
 
     parser.add_argument(
-        "--depth",
-        help="Resnet depth, must be one of 18, 34, 50, 101, 152",
-        type=int,
-        default=50,
+        "--depth", help="Resnet depth, must be one of 18, 34, 50, 101, 152", type=int, default=50,
     )
     parser.add_argument("--epochs", help="Number of epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, help="batch_size", default=8)
     parser.add_argument(
         "--num-workers", type=int, help="number of workers for dataloader mp", default=0
     )
-    parser.add_argument(
-        "--logdir", type=str, help="path to save the logs and checkpoints"
-    )
+    parser.add_argument("--logdir", type=str, help="path to save the logs and checkpoints")
 
+    parser.add_argument("--plot", action="store_true", help="whether to plot images in tensorboard")
     parser.add_argument(
-        "--plot", action="store_true", help="whether to plot images in tensorboard"
-    )
-    parser.add_argument(
-        "--nsr",
-        type=float,
-        default=None,
-        help="whether to use negative sampling of images",
+        "--nsr", type=float, default=None, help="whether to use negative sampling of images",
     )
 
     parser.add_argument(
@@ -147,9 +117,7 @@ def parse():
         nargs="+",
     )
     parser.add_argument(
-        "--augs-prob",
-        type=float,
-        help="probability of applying augmentation in range [0.,1.]",
+        "--augs-prob", type=float, help="probability of applying augmentation in range [0.,1.]",
     )
 
     parser.add_argument(
@@ -175,19 +143,12 @@ def parse():
                         it is set automatically and should not be passed as argument""",
     )
     parser.add_argument(
-        "--local_rank",
-        default=0,
-        type=int,
-        help="this argument is not used and should be ignored",
+        "--local_rank", default=0, type=int, help="this argument is not used and should be ignored",
     )
-    parser.add_argument(
-        "--base_lr", default=0.001, type=float, help="base learning rate"
-    )
+    parser.add_argument("--base_lr", default=0.001, type=float, help="base learning rate")
     parser.add_argument("--final_lr", type=float, default=0, help="final learning rate")
     parser.add_argument("--wd", default=1e-6, type=float, help="weight decay")
-    parser.add_argument(
-        "--warmup_epochs", default=10, type=int, help="number of warmup epochs"
-    )
+    parser.add_argument("--warmup_epochs", default=10, type=int, help="number of warmup epochs")
     parser.add_argument(
         "--start_warmup", default=0, type=float, help="initial warmup learning rate"
     )
@@ -309,20 +270,14 @@ def main():
         if args.rank == 0:
             if len(train_transforms) == 2:
                 logger.info(
-                    "Not applying any special augmentations, using only {}".format(
-                        train_transforms
-                    )
+                    "Not applying any special augmentations, using only {}".format(train_transforms)
                 )
             else:
                 logger.info(
-                    "Applying augmentations {} with probability {}".format(
-                        train_transforms, p
-                    )
+                    "Applying augmentations {} with probability {}".format(train_transforms, p)
                 )
         dataset_train = CocoDataset(
-            args.image_dir,
-            args.train_json_path,
-            transform=transforms.Compose(train_transforms),
+            args.image_dir, args.train_json_path, transform=transforms.Compose(train_transforms),
         )
 
     elif args.dataset == "csv":
@@ -363,9 +318,7 @@ def main():
         )
 
     elif args.nsr is not None:
-        logger.info(
-            f"using WeightedRandomSampler with negative (image) sample rate = {args.nsr}"
-        )
+        logger.info(f"using WeightedRandomSampler with negative (image) sample rate = {args.nsr}")
         weighted_sampler = WeightedRandomSampler(
             dataset_train.weights, len(dataset_train), replacement=True
         )
@@ -400,25 +353,15 @@ def main():
 
     # Create the model
     if args.depth == 18:
-        retinanet = model.resnet18(
-            num_classes=dataset_train.num_classes, pretrained=True
-        )
+        retinanet = model.resnet18(num_classes=dataset_train.num_classes, pretrained=True)
     elif args.depth == 34:
-        retinanet = model.resnet34(
-            num_classes=dataset_train.num_classes, pretrained=True
-        )
+        retinanet = model.resnet34(num_classes=dataset_train.num_classes, pretrained=True)
     elif args.depth == 50:
-        retinanet = model.resnet50(
-            num_classes=dataset_train.num_classes, pretrained=True
-        )
+        retinanet = model.resnet50(num_classes=dataset_train.num_classes, pretrained=True)
     elif args.depth == 101:
-        retinanet = model.resnet101(
-            num_classes=dataset_train.num_classes, pretrained=True
-        )
+        retinanet = model.resnet101(num_classes=dataset_train.num_classes, pretrained=True)
     elif args.depth == 152:
-        retinanet = model.resnet152(
-            num_classes=dataset_train.num_classes, pretrained=True
-        )
+        retinanet = model.resnet152(num_classes=dataset_train.num_classes, pretrained=True)
     else:
         raise ValueError("Unsupported model depth, must be one of 18, 34, 50, 101, 152")
 
@@ -486,9 +429,7 @@ def main():
             * (
                 1
                 + math.cos(
-                    math.pi
-                    * t
-                    / (len(dataloader_train) * (args.epochs - args.warmup_epochs))
+                    math.pi * t / (len(dataloader_train) * (args.epochs - args.warmup_epochs))
                 )
             )
             for t in iters
@@ -553,9 +494,7 @@ def main():
         results = []
         val_image_ids = []
 
-        pbar = tqdm(
-            enumerate(dataloader_train), total=len(dataloader_train), leave=keep_pbar
-        )
+        pbar = tqdm(enumerate(dataloader_train), total=len(dataloader_train), leave=keep_pbar)
         for iter_num, data in pbar:
             n_iter = epoch_num * len(dataloader_train) + iter_num
 
@@ -655,35 +594,22 @@ def main():
 
             if args.rank == 0:
                 if len(results):
-                    with open(
-                        os.path.join(args.logdir, "val_bbox_results.json"), "w"
-                    ) as f:
+                    with open(os.path.join(args.logdir, "val_bbox_results.json"), "w") as f:
                         json.dump(results, f, indent=4)
-                    stats = coco_eval.evaluate_coco(
-                        dataset_val, val_image_ids, args.logdir
-                    )
+                    stats = coco_eval.evaluate_coco(dataset_val, val_image_ids, args.logdir)
                     map_avg, map_50, map_75, map_small = stats[:4]
                 else:
                     map_avg, map_50, map_75, map_small = [-1] * 4
 
                 if map_50 > best_map:
                     torch.save(
-                        retinanet,
-                        os.path.join(args.logdir, f"retinanet_resnet50_best.pt"),
+                        retinanet, os.path.join(args.logdir, f"retinanet_resnet50_best.pt"),
                     )
                     best_map = map_50
-                writer.add_scalar(
-                    "eval/map@0.5:0.95", map_avg, epoch_num * len(dataloader_train)
-                )
-                writer.add_scalar(
-                    "eval/map@0.5", map_50, epoch_num * len(dataloader_train)
-                )
-                writer.add_scalar(
-                    "eval/map@0.75", map_75, epoch_num * len(dataloader_train)
-                )
-                writer.add_scalar(
-                    "eval/map_small", map_small, epoch_num * len(dataloader_train)
-                )
+                writer.add_scalar("eval/map@0.5:0.95", map_avg, epoch_num * len(dataloader_train))
+                writer.add_scalar("eval/map@0.5", map_50, epoch_num * len(dataloader_train))
+                writer.add_scalar("eval/map@0.75", map_75, epoch_num * len(dataloader_train))
+                writer.add_scalar("eval/map_small", map_small, epoch_num * len(dataloader_train))
                 logger.info(
                     f"Epoch: {epoch_num} | lr = {lr:.6f} |map@0.5:0.95 = {map_avg:.4f} | map@0.5 = {map_50:.4f} | map@0.75 = {map_75:.4f} | map-small = {map_small:.4f}"
                 )
@@ -699,8 +625,6 @@ def main():
         # torch.save(retinanet.module, os.path.join(args.logdir, f"retinanet_{epoch_num}.pt"))
 
     retinanet.eval()
-
-    # torch.save(retinanet, os.path.join(args.logdir, f"retinanet_final.pt"))
 
 
 if __name__ == "__main__":
