@@ -92,6 +92,7 @@ def load_checkpoint(model: nn.Module ,weights: str,depth: int) -> nn.Module:
         nn.Module : retinanet model.
     """         
     if weights.endswith(".pt"):  # pytorch format
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
 
         # load model
@@ -101,7 +102,9 @@ def load_checkpoint(model: nn.Module ,weights: str,depth: int) -> nn.Module:
                 for k, v in ckpt.state_dict().items()
                 if model.state_dict()[k].shape == v.shape
             } 
-            model.load_state_dict(ckpt["model"], strict=True)
+            model.load_state_dict(ckpt, strict=True)
+            log_file = os.path.join(args.logdir, "train.log")
+            logger = get_logger(__name__, log_file)
             logger.info("Resuming training from checkpoint in {}".format(weights))  
         except KeyError as e:
             s = (
