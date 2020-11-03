@@ -77,6 +77,43 @@ def init_distributed_mode(args):
     torch.cuda.set_device(args.gpu_to_work_on)
     return
 
+def load_checkpoint(model: nn.Module ,weights: str,depth: int) -> nn.Module:
+    """Loads already trained weights to initialized model.
+
+    Args:
+        model (nn.Module): Empty retinanet model
+        weights (str): Path to checkpoint
+        depth (int): ResNet depth
+
+    Raises:
+        KeyError: If current model and checkpoint layers are not matching.
+
+    Returns:
+        nn.Module : retinanet model.
+    """         
+    if weights.endswith(".pt"):  # pytorch format
+        ckpt = torch.load(weights, map_location=device)  # load checkpoint
+
+        # load model
+        try:
+            ckpt = {
+                k: v
+                for k, v in ckpt.state_dict().items()
+                if model.state_dict()[k].shape == v.shape
+            } 
+            model.load_state_dict(ckpt["model"], strict=True)
+            logger.info("Resuming training from checkpoint in {}".format(weights))  
+        except KeyError as e:
+            s = (
+                "%s is not compatible with depth %s. This may be due to model architecture differences or %s may be out of date. "
+                "Please delete or update %s and try again, or use --weights '' to train from scratch."
+                % (weights, str(depth), weights, weights)
+            )
+            raise KeyError(s) from e
+        del ckpt
+        return model
+    else:
+        return model
 
 def parse():
     parser = argparse.ArgumentParser(
@@ -167,6 +204,7 @@ def parse():
         default="DDP",
         help="whether to use DataParallel or DistributedDataParallel",
     )
+    parser.add_argument("--weights", default='', type=str, help="model weights path to resume training")
 
     return parser
 
@@ -378,14 +416,19 @@ def main():
     # Create the model
     if args.depth == 18:
         retinanet = model.resnet18(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = load_checkpoint(retinanet,args.weights,args.depth)
     elif args.depth == 34:
         retinanet = model.resnet34(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = load_checkpoint(retinanet,args.weights,args.depth)
     elif args.depth == 50:
         retinanet = model.resnet50(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = load_checkpoint(retinanet,args.weights,args.depth)
     elif args.depth == 101:
         retinanet = model.resnet101(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = load_checkpoint(retinanet,args.weights,args.depth)
     elif args.depth == 152:
         retinanet = model.resnet152(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = load_checkpoint(retinanet,args.weights,args.depth)
     else:
         raise ValueError("Unsupported model depth, must be one of 18, 34, 50, 101, 152")
 
