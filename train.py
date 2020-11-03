@@ -103,8 +103,6 @@ def load_checkpoint(model: nn.Module ,weights: str,depth: int) -> nn.Module:
                 if model.state_dict()[k].shape == v.shape
             } 
             model.load_state_dict(ckpt, strict=True)
-            log_file = os.path.join(args.logdir, "train.log")
-            logger = get_logger(__name__, log_file)
             logger.info("Resuming training from checkpoint in {}".format(weights))  
         except KeyError as e:
             s = (
@@ -269,7 +267,7 @@ def validate(model, dataset, valid_loader):
 
 
 def main():
-    global args, results, val_image_ids
+    global args, results, val_image_ids, logger
 
     args = parse().parse_args()
 
