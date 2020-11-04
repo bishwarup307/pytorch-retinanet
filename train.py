@@ -77,6 +77,44 @@ def init_distributed_mode(args):
     torch.cuda.set_device(args.gpu_to_work_on)
     return
 
+def load_checkpoint(model: nn.Module ,weights: str,depth: int) -> nn.Module:
+    """Loads already trained weights to initialized model.
+
+    Args:
+        model (nn.Module): Empty retinanet model
+        weights (str): Path to checkpoint
+        depth (int): ResNet depth
+
+    Raises:
+        KeyError: If current model and checkpoint layers are not matching.
+
+    Returns:
+        nn.Module : retinanet model.
+    """         
+    if weights.endswith(".pt"):  # pytorch format
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        ckpt = torch.load(weights, map_location=device)  # load checkpoint
+
+        # load model
+        try:
+            ckpt = {
+                k: v
+                for k, v in ckpt.state_dict().items()
+                if model.state_dict()[k].shape == v.shape
+            } 
+            model.load_state_dict(ckpt, strict=True)
+            logger.info("Resuming training from checkpoint in {}".format(weights))  
+        except KeyError as e:
+            s = (
+                "%s is not compatible with depth %s. This may be due to model architecture differences or %s may be out of date. "
+                "Please delete or update %s and try again, or use --weights '' to train from scratch."
+                % (weights, str(depth), weights, weights)
+            )
+            raise KeyError(s) from e
+        del ckpt
+        return model
+    else:
+        return model
 
 def parse():
     parser = argparse.ArgumentParser(
@@ -167,6 +205,7 @@ def parse():
         default="DDP",
         help="whether to use DataParallel or DistributedDataParallel",
     )
+    parser.add_argument("--weights", default='', type=str, help="model weights path to resume training")
 
     return parser
 
@@ -228,7 +267,7 @@ def validate(model, dataset, valid_loader):
 
 
 def main():
-    global args, results, val_image_ids
+    global args, results, val_image_ids, logger
 
     args = parse().parse_args()
 
@@ -389,6 +428,9 @@ def main():
     else:
         raise ValueError("Unsupported model depth, must be one of 18, 34, 50, 101, 152")
 
+    # Load checkpoint if provided.
+    retinanet = load_checkpoint(retinanet,args.weights,args.depth)
+    
     use_gpu = True
 
     if torch.cuda.is_available():
