@@ -3,14 +3,13 @@ __author__: bishwarup
 created: Thursday, 1st October 2020 8:54:17 pm
 """
 
-from typing import Tuple, Optional
-import os
 import argparse
-import numpy as np
+from typing import Tuple, Optional
+
 import torch.onnx
 
-from retinanet.utils import get_logger
 from retinanet import model
+from retinanet.utils import get_logger, remove_module
 
 logger = get_logger(__name__)
 
@@ -42,7 +41,9 @@ def export(
     device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
     logger.info(f"using device: {device}")
     net = net.to(device)
-    net.load_state_dict(torch.load(checkpoint, map_location=device))
+    state_dict = torch.load(checkpoint, map_location=device)
+    state_dict = remove_module(state_dict)
+    net.load_state_dict(state_dict)
     logger.info(f"successfully loaded saved checkpoint.")
 
     dummy_input = torch.randn(batch_size, 3, input_size[0], input_size[1])

@@ -103,3 +103,4 @@ ENV/
 *.pt
 *.pth
 .vscode/
+.idea/

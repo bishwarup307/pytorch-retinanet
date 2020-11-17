@@ -1,3 +1,5 @@
+from collections import OrderedDict
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -232,3 +234,12 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+
+
+def remove_module(state_dict: OrderedDict):
+    clean_state_dict = OrderedDict()
+    for key, value in state_dict.items():
+        modified_key = key[7:] if key.startswith("module.") else key
+        clean_state_dict[modified_key] = value
+    return clean_state_dict
+
