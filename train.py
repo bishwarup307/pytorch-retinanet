@@ -77,7 +77,8 @@ def init_distributed_mode(args):
     torch.cuda.set_device(args.gpu_to_work_on)
     return
 
-def load_checkpoint(model: nn.Module ,weights: str,depth: int) -> nn.Module:
+
+def load_checkpoint(model: nn.Module, weights: str, depth: int) -> nn.Module:
     """Loads already trained weights to initialized model.
 
     Args:
@@ -90,7 +91,7 @@ def load_checkpoint(model: nn.Module ,weights: str,depth: int) -> nn.Module:
 
     Returns:
         nn.Module : retinanet model.
-    """         
+    """
     if weights.endswith(".pt"):  # pytorch format
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
@@ -98,12 +99,10 @@ def load_checkpoint(model: nn.Module ,weights: str,depth: int) -> nn.Module:
         # load model
         try:
             ckpt = {
-                k: v
-                for k, v in ckpt.state_dict().items()
-                if model.state_dict()[k].shape == v.shape
-            } 
+                k: v for k, v in ckpt.state_dict().items() if model.state_dict()[k].shape == v.shape
+            }
             model.load_state_dict(ckpt, strict=True)
-            logger.info("Resuming training from checkpoint in {}".format(weights))  
+            logger.info("Resuming training from checkpoint in {}".format(weights))
         except KeyError as e:
             s = (
                 "%s is not compatible with depth %s. This may be due to model architecture differences or %s may be out of date. "
@@ -115,6 +114,7 @@ def load_checkpoint(model: nn.Module ,weights: str,depth: int) -> nn.Module:
         return model
     else:
         return model
+
 
 def parse():
     parser = argparse.ArgumentParser(
@@ -205,7 +205,9 @@ def parse():
         default="DDP",
         help="whether to use DataParallel or DistributedDataParallel",
     )
-    parser.add_argument("--weights", default='', type=str, help="model weights path to resume training")
+    parser.add_argument(
+        "--weights", default="", type=str, help="model weights path to resume training"
+    )
 
     return parser
 
@@ -429,8 +431,8 @@ def main():
         raise ValueError("Unsupported model depth, must be one of 18, 34, 50, 101, 152")
 
     # Load checkpoint if provided.
-    retinanet = load_checkpoint(retinanet,args.weights,args.depth)
-    
+    retinanet = load_checkpoint(retinanet, args.weights, args.depth)
+
     use_gpu = True
 
     if torch.cuda.is_available():
@@ -571,7 +573,7 @@ def main():
             optimizer.zero_grad()
 
             if torch.cuda.is_available():
-                with amp.autocast(enabled = False):
+                with amp.autocast(enabled=False):
                     classification_loss, regression_loss = retinanet(
                         [data["img"].cuda().float(), data["annot"].cuda()]
                     )
@@ -669,7 +671,8 @@ def main():
 
                 if map_50 > best_map:
                     torch.save(
-                        retinanet, os.path.join(args.logdir, f"retinanet_resnet50_best.pt"),
+                        retinanet.state_dict(),
+                        os.path.join(args.logdir, f"retinanet_resnet{args.depth}_best.pt"),
                     )
                     best_map = map_50
                 writer.add_scalar("eval/map@0.5:0.95", map_avg, epoch_num * len(dataloader_train))
