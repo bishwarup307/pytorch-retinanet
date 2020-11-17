@@ -42,7 +42,7 @@ def export(
     device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
     logger.info(f"using device: {device}")
     net = net.to(device)
-    net.load_state_dict(torch.load(checkpoint, map_location=device).state_dict())
+    net.load_state_dict(torch.load(checkpoint, map_location=device))
     logger.info(f"successfully loaded saved checkpoint.")
 
     dummy_input = torch.randn(batch_size, 3, input_size[0], input_size[1])
