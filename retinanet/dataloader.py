@@ -1,32 +1,114 @@
-from __future__ import print_function, division
-import sys
-import os
-import torch
-import numpy as np
-import random
 import csv
-import cv2
 import glob
-from torch.utils.data import Dataset, DataLoader
-import torchvision
-from torchvision import transforms, utils
-from torch.utils.data.sampler import Sampler
-from torch.utils.data.dataloader import default_collate
-from pycocotools.coco import COCO
+import os
+import random
+import sys
+from typing import Tuple, Dict, Optional
+import albumentations as A
 
-
+import cv2
+import numpy as np
+import skimage
+import skimage.color
 import skimage.io
 import skimage.transform
-import skimage.color
-import skimage
-
+import torch
+import torchvision
 from PIL import Image
+from pycocotools.coco import COCO
+from torch.utils.data import Dataset
+from torch.utils.data.dataloader import default_collate
+from torch.utils.data.sampler import Sampler
+
+
+def _transform_image(sample: Dict, transforms: Dict):
+
+    transforms = {k: v for k, v in transforms.items() if v}
+    # print(transforms)
+
+    augs = []
+    for name, params in transforms.items():
+        # print(name)
+        if name == "hflip":
+            augs.append(A.HorizontalFlip(p=params))
+        if name == "vflip":
+            augs.append(A.VerticalFlip(p=params))
+        if name == "shiftscalerotate":
+            augs.append(A.ShiftScaleRotate(p=params))
+        if name == "gamma":
+            augs.append(A.RandomGamma(p=params))
+        if name == "sharpness":
+            augs.append(A.IAASharpen(p=params))
+        if name == "gaussian_blur":
+            augs.append(A.GaussianBlur(p=params))
+        if name == "superpixels":
+            augs.append(A.IAASuperpixels(p=params))
+        if name == "additive_noise":
+            augs.append(A.IAAAdditiveGaussianNoise(p=params))
+        if name == "perspective":
+            augs.append(A.IAAPerspective(p=params))
+        if name == "color_jitter":
+            augs.append(A.ColorJitter(p=params))
+        if name == "brightness":
+            augs.append(A.RandomBrightness(p=params))
+        if name == "contrast":
+            augs.append(A.RandomContrast(p=params))
+
+        if name == "rgb_shift":
+            augs.append(
+                A.RGBShift(
+                    r_shift_limit=params[0],
+                    g_shift_limit=params[1],
+                    b_shift_limit=params[2],
+                    p=params[3],
+                )
+            )
+        if name == "cutout":
+            augs.append(
+                A.Cutout(max_h_size=params[0], max_w_size=params[1], p=params[2])
+            )
+    trsf = A.Compose(
+        augs,
+        bbox_params=A.BboxParams(
+            format="pascal_voc",
+            label_fields=["category_ids"],
+            min_visibility=transforms["min_visibility"],
+            min_area=transforms["min_area"],
+        ),
+    )
+    # print(sample["img"].dtype)
+    transformed = trsf(
+        image=sample["img"],
+        bboxes=sample["annot"][:, :-1],
+        category_ids=sample["annot"][:, -1],
+    )
+    if len(transformed["bboxes"]):
+        annot = np.concatenate(
+            [
+                np.array(transformed["bboxes"]),
+                np.array(transformed["category_ids"])[..., np.newaxis],
+            ],
+            axis=1,
+        )
+    # print(annot.shape)
+    sample["img"] = transformed["image"]
+    sample["annot"] = annot
+
+    return sample
 
 
 class CocoDataset(Dataset):
     """Coco dataset."""
 
-    def __init__(self, image_dir, json_path, transform=None, return_ids=False, nsr=None):
+    def __init__(
+        self,
+        image_dir: str,
+        json_path: str,
+        image_size: Tuple[int, int],
+        transform: Optional[Dict] = None,
+        return_ids: bool = False,
+        nsr: float = None,
+    ):
         """
         Args:
             root_dir (string): COCO directory.
@@ -37,6 +119,7 @@ class CocoDataset(Dataset):
         # self.set_name = set_name
         self.image_dir = image_dir
         self.transform = transform
+        self.image_size = image_size
 
         self.coco = COCO(json_path)
         self.image_ids = self.coco.getImgIds()
@@ -75,26 +158,35 @@ class CocoDataset(Dataset):
             self.labels[value] = key
         # print(len(self.labels))
 
+    def _to_tensor(self, sample):
+        sample["img"] = torch.from_numpy((sample["img"] / 255.0).astype(np.float32))
+        sample["annot"] = torch.from_numpy(sample["annot"].astype(np.float32))
+        return sample
+
     def __len__(self):
         return len(self.image_ids)
 
     def __getitem__(self, idx):
 
-        img = self.load_image(idx)
+        img = self.load_image(idx, normalize=False)
         annot = self.load_annotations(idx)
         sample = {"img": img, "annot": annot}
-        if self.transform:
-            sample = self.transform(sample)
+        if self.image_size is not None:
+            resize = Resizer(self.image_size)
+            sample = resize(sample)
+
+        if self.transform is not None:
+            sample = _transform_image(sample, self.transform)
 
         if self.return_ids:
-            return sample, self.image_ids[idx]
+            return self._to_tensor(sample), self.image_ids[idx]
 
-        return sample
+        return self._to_tensor(sample)
 
     def load_image(self, image_index, normalize=True):
         image_info = self.coco.loadImgs(self.image_ids[image_index])[0]
         path = os.path.join(self.image_dir, image_info["file_name"])
-        img = skimage.io.imread(path)
+        img = np.array(Image.open(path))
 
         if len(img.shape) == 2:
             img = skimage.color.gray2rgb(img)
@@ -106,7 +198,9 @@ class CocoDataset(Dataset):
 
     def load_annotations(self, image_index):
         # get ground truth annotations
-        annotations_ids = self.coco.getAnnIds(imgIds=self.image_ids[image_index], iscrowd=False)
+        annotations_ids = self.coco.getAnnIds(
+            imgIds=self.image_ids[image_index], iscrowd=False
+        )
         annotations = np.zeros((0, 5))
 
         # some images appear to miss annotations (like image with id 257034)
@@ -166,7 +260,9 @@ class CSVDataset(Dataset):
             with self._open_for_csv(self.class_list) as file:
                 self.classes = self.load_classes(csv.reader(file, delimiter=","))
         except ValueError as e:
-            raise (ValueError("invalid CSV class file: {}: {}".format(self.class_list, e)))
+            raise (
+                ValueError("invalid CSV class file: {}: {}".format(self.class_list, e))
+            )
 
         self.labels = {}
         for key, value in self.classes.items():
@@ -179,7 +275,11 @@ class CSVDataset(Dataset):
                     csv.reader(file, delimiter=","), self.classes
                 )
         except ValueError as e:
-            raise (ValueError("invalid CSV annotations file: {}: {}".format(self.train_file, e)))
+            raise (
+                ValueError(
+                    "invalid CSV annotations file: {}: {}".format(self.train_file, e)
+                )
+            )
         self.image_names = list(self.image_data.keys())
 
     def _parse(self, value, function, fmt):
@@ -214,11 +314,19 @@ class CSVDataset(Dataset):
             try:
                 class_name, class_id = row
             except ValueError:
-                raise (ValueError("line {}: format should be 'class_name,class_id'".format(line)))
-            class_id = self._parse(class_id, int, "line {}: malformed class ID: {{}}".format(line))
+                raise (
+                    ValueError(
+                        "line {}: format should be 'class_name,class_id'".format(line)
+                    )
+                )
+            class_id = self._parse(
+                class_id, int, "line {}: malformed class ID: {{}}".format(line)
+            )
 
             if class_name in result:
-                raise ValueError("line {}: duplicate class name: '{}'".format(line, class_name))
+                raise ValueError(
+                    "line {}: duplicate class name: '{}'".format(line, class_name)
+                )
             result[class_name] = class_id
         return result
 
@@ -322,7 +430,9 @@ class CSVDataset(Dataset):
                     )
                 )
 
-            result[img_file].append({"x1": x1, "x2": x2, "y1": y1, "y2": y2, "class": class_name})
+            result[img_file].append(
+                {"x1": x1, "x2": x2, "y1": y1, "y2": y2, "class": class_name}
+            )
         return result
 
     def name_to_label(self, name):
@@ -372,7 +482,7 @@ def collater(data):
     else:
         annot_padded = torch.ones((len(annots), 1, 5)) * -1
 
-    padded_imgs = padded_imgs.permute(0, 3, 1, 2)
+    padded_imgs = padded_imgs.permute(0, 3, 1, 2).contiguous()
 
     return {"img": padded_imgs, "annot": annot_padded}
 
@@ -386,7 +496,7 @@ def letterbox(image, expected_size, fill_value=0):
 
     image = cv2.resize(image, (nw, nh), interpolation=cv2.INTER_CUBIC)
     # print(image)
-    new_img = np.full((eh, ew, 3), fill_value, dtype=np.float32)
+    new_img = np.full((eh, ew, 3), fill_value, dtype=np.uint8)
     # fill new image with the resized image and centered it
 
     offset_x, offset_y = (ew - nw) // 2, (eh - nh) // 2
@@ -403,6 +513,7 @@ class Resizer(object):
 
     def __call__(self, sample):
         image, annots = sample["img"], sample["annot"]
+        # print(f"image dtype before resizer: {image.dtype}")
         rsz_img, scale, offset_x, offset_y = letterbox(image, self.size)
 
         annots[:, :4] *= scale
@@ -412,8 +523,8 @@ class Resizer(object):
         annots[:, 3] += offset_y
 
         return {
-            "img": torch.from_numpy(rsz_img),
-            "annot": torch.from_numpy(annots),
+            "img": rsz_img,
+            "annot": annots,
             "scale": scale,
             "offset_x": offset_x,
             "offset_y": offset_y,
