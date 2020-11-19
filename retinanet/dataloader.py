@@ -24,7 +24,8 @@ from torch.utils.data.sampler import Sampler
 def _transform_image(sample: Dict, transforms: Dict):
 
     transforms = {k: v for k, v in transforms.items() if v}
-    # print(transforms)
+    if len(transforms) <= 2:
+        return sample
 
     augs = []
     for name, params in transforms.items():

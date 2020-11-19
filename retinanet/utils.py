@@ -277,6 +277,8 @@ class EarlyStopping:
 
 
 def get_next_run(runs: List[str]):
+    if not len(runs):
+        return "run0"
     curr_exp = max([int(x.replace("run", "")) for x in runs])
     return "run" + str(curr_exp + 1)
 
@@ -326,8 +328,16 @@ def get_hparams(config):
     hparams["additive_noise"] = config.augs["additive_noise"]
     hparams["shiftscalerotate"] = config.augs["shiftscalerotate"]
     hparams["perspective"] = config.augs["perspective"]
-    hparams["rgb_shift"] = ",".join(list(map(str, config.augs["rgb_shift"])))
-    hparams["cutout"] = ",".join(list(map(str, config.augs["cutout"])))
+    hparams["rgb_shift"] = (
+        ",".join(list(map(str, config.augs["rgb_shift"])))
+        if config.augs["rgb_shift"] is not None
+        else None
+    )
+    hparams["cutout"] = (
+        ",".join(list(map(str, config.augs["cutout"])))
+        if not config.augs["cutout"] is not None
+        else None
+    )
     hparams["min_visibility"] = config.augs["min_visibility"]
     hparams["min_area"] = config.augs["min_area"]
 
