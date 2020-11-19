@@ -366,6 +366,7 @@ def main():
             batch_size=Config.batch_size,
             num_workers=Config.workers,
             collate_fn=collater,
+            shuffle=True,
         )
 
     elif Config.negative_sampling_rate is not None:
@@ -381,6 +382,7 @@ def main():
             collate_fn=collater,
             sampler=weighted_sampler,
             batch_size=Config.batch_size,
+            shuffle=True,
             pin_memory=True,
         )
 
@@ -392,6 +394,7 @@ def main():
             dataset_train,
             num_workers=Config.workers,
             collate_fn=collater,
+            # shuffle=True,
             batch_sampler=sampler,
             pin_memory=True,
         )
@@ -523,151 +526,147 @@ def main():
     try:
         for epoch in range(Config.num_epochs):
             torch.cuda.empty_cache()
-            while not stop:
-                if dist.is_available() and distributed:
-                    if args.dist_mode == "DDP":
-                        dataloader_train.sampler.set_epoch(epoch)
-                    retinanet.module.train()
-                    retinanet.module.freeze_bn()
-                else:
-                    retinanet.train()
-                    retinanet.freeze_bn()
-                # retinanet.module.freeze_bn()
+            if stop:
+                break
+            if dist.is_available() and distributed:
+                if args.dist_mode == "DDP":
+                    dataloader_train.sampler.set_epoch(epoch)
+                retinanet.module.train()
+                retinanet.module.freeze_bn()
+            else:
+                retinanet.train()
+                retinanet.freeze_bn()
+            # retinanet.module.freeze_bn()
 
-                epoch_loss = []
-                results = []
-                val_image_ids = []
+            epoch_loss = []
+            results = []
+            val_image_ids = []
 
-                pbar = tqdm(
-                    enumerate(dataloader_train),
-                    total=len(dataloader_train),
-                    leave=keep_pbar,
-                )
-                for iter_num, data in pbar:
-                    n_iter = epoch * len(dataloader_train) + iter_num
+            pbar = tqdm(
+                enumerate(dataloader_train),
+                total=len(dataloader_train),
+                leave=keep_pbar,
+            )
+            for iter_num, data in pbar:
+                n_iter = epoch * len(dataloader_train) + iter_num
 
-                    for param_group in optimizer.param_groups:
-                        lr = lr_schedule[n_iter]
-                        param_group["lr"] = lr
+                for param_group in optimizer.param_groups:
+                    lr = lr_schedule[n_iter]
+                    param_group["lr"] = lr
 
-                    optimizer.zero_grad()
+                optimizer.zero_grad()
 
-                    if torch.cuda.is_available():
-                        with amp.autocast(enabled=False):
-                            classification_loss, regression_loss = retinanet(
-                                [data["img"].cuda().float(), data["annot"].cuda()]
-                            )
-                    else:
+                if torch.cuda.is_available():
+                    with amp.autocast(enabled=False):
                         classification_loss, regression_loss = retinanet(
-                            [data["img"].float(), data["annot"]]
+                            [data["img"].cuda().float(), data["annot"].cuda()]
                         )
-
-                    classification_loss = classification_loss.mean()
-                    regression_loss = regression_loss.mean()
-                    loss = classification_loss + regression_loss
-
-                    if args.rank == 0:
-                        writer.add_scalar("Learning rate", lr, n_iter)
-                    pbar_desc = f"Epoch: {epoch} | steps: {n_iter} |lr = {lr:0.6f} | batch: {iter_num} | cls: {classification_loss:.4f} | reg: {regression_loss:.4f}"
-                    pbar.set_description(pbar_desc)
-                    pbar.update(1)
-                    if bool(loss == 0):
-                        continue
-
-                    # loss.backward()
-                    scaler.scale(loss).backward()
-
-                    # unscale the gradients for grad clipping
-                    scaler.unscale_(optimizer)
-
-                    torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
-
-                    # optimizer.step()
-                    # scheduler.step()  # one cycle lr operates at batch level
-                    scaler.step(optimizer)
-                    scaler.update()
-
-                    loss_hist.append(float(loss))
-
-                    epoch_loss.append(float(loss))
-
-                    del classification_loss
-                    del regression_loss
-
-                if Config.dataset == "coco":
-                    if len(dataset_val) > 0:
-                        if (
-                            dist.is_available()
-                            and distributed
-                            and args.dist_mode == "DDP"
-                        ):
-                            sampler_val = DistributedSampler(dataset_val)
-                            dataloader_val = DataLoader(
-                                dataset_val,
-                                sampler=sampler_val,
-                                batch_size=Config.batch_size,
-                                num_workers=Config.workers,
-                                collate_fn=eval_collate,
-                                pin_memory=True,
-                            )
-                        else:
-                            dataloader_val = DataLoader(
-                                dataset_val,
-                                batch_size=Config.batch_size,
-                                num_workers=Config.workers,
-                                collate_fn=eval_collate,
-                                pin_memory=True,
-                                drop_last=False,
-                            )
-                    else:
-                        dataloader_val = None
-
-                    if dataloader_val is not None:
-                        validate(retinanet, dataset_val, dataloader_val)
-
-                    if args.rank == 0:
-                        if len(results):
-                            with open(
-                                os.path.join(logdir, "val_bbox_results.json"), "w"
-                            ) as f:
-                                json.dump(results, f, indent=4)
-                            stats = coco_eval.evaluate_coco(
-                                dataset_val, val_image_ids, logdir
-                            )
-                            map_avg, map_50, map_75, map_small = stats[:4]
-                        else:
-                            map_avg, map_50, map_75, map_small = [-1] * 4
-
-                        if map_50 > best_map:
-                            torch.save(
-                                retinanet.state_dict(),
-                                os.path.join(
-                                    logdir,
-                                    f"retinanet_{Config.backbone.replace('-', '_')}_best.pt",
-                                ),
-                            )
-                            best_map = map_50
-                        stop = early_stopping.update(map_50)
-
-                        writer.add_scalar(
-                            "eval/map@0.5:0.95", map_avg, epoch * len(dataloader_train),
-                        )
-                        writer.add_scalar(
-                            "eval/map@0.5", map_50, epoch * len(dataloader_train)
-                        )
-                        writer.add_scalar(
-                            "eval/map@0.75", map_75, epoch * len(dataloader_train)
-                        )
-                        writer.add_scalar(
-                            "eval/map_small", map_small, epoch * len(dataloader_train),
-                        )
-                        logger.info(
-                            f"Epoch: {epoch} | lr = {lr:.6f} |map@0.5:0.95 = {map_avg:.4f} | map@0.5 = {map_50:.4f} | map@0.75 = {map_75:.4f} | map-small = {map_small:.4f}"
-                        )
-
                 else:
-                    raise ValueError("`dataset` is not COCO")
+                    classification_loss, regression_loss = retinanet(
+                        [data["img"].float(), data["annot"]]
+                    )
 
+                classification_loss = classification_loss.mean()
+                regression_loss = regression_loss.mean()
+                loss = classification_loss + regression_loss
+
+                if args.rank == 0:
+                    writer.add_scalar("Learning rate", lr, n_iter)
+                pbar_desc = f"Epoch: {epoch} | steps: {n_iter} |lr = {lr:0.6f} | batch: {iter_num} | cls: {classification_loss:.4f} | reg: {regression_loss:.4f}"
+                pbar.set_description(pbar_desc)
+                pbar.update(1)
+                if bool(loss == 0):
+                    continue
+
+                # loss.backward()
+                scaler.scale(loss).backward()
+
+                # unscale the gradients for grad clipping
+                scaler.unscale_(optimizer)
+
+                torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
+
+                # optimizer.step()
+                # scheduler.step()  # one cycle lr operates at batch level
+                scaler.step(optimizer)
+                scaler.update()
+
+                loss_hist.append(float(loss))
+
+                epoch_loss.append(float(loss))
+
+                del classification_loss
+                del regression_loss
+
+            if Config.dataset == "coco":
+                if len(dataset_val) > 0:
+                    if dist.is_available() and distributed and args.dist_mode == "DDP":
+                        sampler_val = DistributedSampler(dataset_val)
+                        dataloader_val = DataLoader(
+                            dataset_val,
+                            sampler=sampler_val,
+                            batch_size=Config.batch_size,
+                            num_workers=Config.workers,
+                            collate_fn=eval_collate,
+                            pin_memory=True,
+                        )
+                    else:
+                        dataloader_val = DataLoader(
+                            dataset_val,
+                            batch_size=Config.batch_size,
+                            num_workers=Config.workers,
+                            collate_fn=eval_collate,
+                            pin_memory=True,
+                            drop_last=False,
+                        )
+                else:
+                    dataloader_val = None
+
+                if dataloader_val is not None:
+                    validate(retinanet, dataset_val, dataloader_val)
+
+                if args.rank == 0:
+                    if len(results):
+                        with open(
+                            os.path.join(logdir, "val_bbox_results.json"), "w"
+                        ) as f:
+                            json.dump(results, f, indent=4)
+                        stats = coco_eval.evaluate_coco(
+                            dataset_val, val_image_ids, logdir
+                        )
+                        map_avg, map_50, map_75, map_small = stats[:4]
+                    else:
+                        map_avg, map_50, map_75, map_small = [-1] * 4
+
+                    if map_50 > best_map:
+                        torch.save(
+                            retinanet.state_dict(),
+                            os.path.join(
+                                logdir,
+                                f"retinanet_{Config.backbone.replace('-', '_')}_best.pt",
+                            ),
+                        )
+                        best_map = map_50
+                    stop = early_stopping.update(map_50)
+
+                    writer.add_scalar(
+                        "eval/map@0.5:0.95", map_avg, epoch * len(dataloader_train),
+                    )
+                    writer.add_scalar(
+                        "eval/map@0.5", map_50, epoch * len(dataloader_train)
+                    )
+                    writer.add_scalar(
+                        "eval/map@0.75", map_75, epoch * len(dataloader_train)
+                    )
+                    writer.add_scalar(
+                        "eval/map_small", map_small, epoch * len(dataloader_train),
+                    )
+                    logger.info(
+                        f"Epoch: {epoch} | lr = {lr:.6f} |map@0.5:0.95 = {map_avg:.4f} | map@0.5 = {map_50:.4f} | map@0.75 = {map_75:.4f} | map-small = {map_small:.4f}"
+                    )
+
+            else:
+                raise ValueError("`dataset` is not COCO")
     except KeyboardInterrupt:
         print("Interrupted")
     finally:

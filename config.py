@@ -10,7 +10,7 @@ class Config:
     normalize = dict()
     normalize["mean"] = [0.485, 0.456, 0.406]
     normalize["std"] = [0.229, 0.224, 0.225]
-    logdir = "/home/bishwarup/Desktop/sample_log/"
+    logdir = "/home/bishwarup/EV/v0.2.2/runs/"
 
     # aug config
     augs = dict()
@@ -40,7 +40,7 @@ class Config:
     augs["min_area"] = 450
 
     # model config
-    backbone = "resnet-18"
+    backbone = "resnet-34"
     pretrained = True
     weights = None
     image_size = 512

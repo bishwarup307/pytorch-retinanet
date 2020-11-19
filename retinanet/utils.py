@@ -266,11 +266,13 @@ class EarlyStopping:
         if self.mode == "maximize":
             if val >= self.best_metric:
                 self._reset_counter()
+                self.best_metric = val
             else:
                 self._counter += 1
         else:
             if val <= self.best_metric:
                 self._reset_counter()
+                self.best_metric = val
             else:
                 self._counter += 1
 
