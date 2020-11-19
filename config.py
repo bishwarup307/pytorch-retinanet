@@ -47,8 +47,8 @@ class Config:
 
     # learning config
     num_epochs = 100
-    batch_size = 8
-    workers = 0
+    batch_size = 32
+    workers = 8
     optimizer = "adam"
     lr_schedule = "WarmupCosineAnnealing"
     base_lr = 1e-5

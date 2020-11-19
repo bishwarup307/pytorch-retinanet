@@ -9,6 +9,9 @@ from typing import Union, Optional, List
 import os
 import copy
 
+from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard.summary import hparams
+
 LOG_COLORS = {
     logging.ERROR: colorama.Fore.RED,
     logging.WARNING: colorama.Fore.YELLOW,
@@ -283,6 +286,20 @@ def get_next_run(runs: List[str]):
     return "run" + str(curr_exp + 1)
 
 
+class CustomSummaryWriter(SummaryWriter):
+    def add_hparams(self, hparam_dict, metric_dict):
+        torch._C._log_api_usage_once("tensorboard.logging.add_hparams")
+        if type(hparam_dict) is not dict or type(metric_dict) is not dict:
+            raise TypeError("hparam_dict and metric_dict should be dictionary.")
+        exp, ssi, sei = hparams(hparam_dict, metric_dict)
+
+        self.file_writer.add_summary(exp)
+        self.file_writer.add_summary(ssi)
+        self.file_writer.add_summary(sei)
+        for k, v in metric_dict.items():
+            self.add_scalar(k, v)
+
+
 def get_runtime(seconds):
     seconds = seconds % (24 * 3600)
     hour = seconds // 3600
@@ -330,12 +347,12 @@ def get_hparams(config):
     hparams["perspective"] = config.augs["perspective"]
     hparams["rgb_shift"] = (
         ",".join(list(map(str, config.augs["rgb_shift"])))
-        if config.augs["rgb_shift"] is not None
+        if config.augs["rgb_shift"]
         else None
     )
     hparams["cutout"] = (
         ",".join(list(map(str, config.augs["cutout"])))
-        if not config.augs["cutout"] is not None
+        if config.augs["cutout"]
         else None
     )
     hparams["min_visibility"] = config.augs["min_visibility"]

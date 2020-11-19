@@ -4,6 +4,7 @@ import json
 import math
 import os
 import time
+from pathlib import Path
 from typing import List
 
 import numpy as np
@@ -11,7 +12,6 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.optim as optim
-from tensorboardX import SummaryWriter
 from torch.cuda import amp
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
@@ -34,6 +34,7 @@ from retinanet.utils import (
     get_hparams,
     get_next_run,
     get_runtime,
+    CustomSummaryWriter,
 )
 
 assert torch.__version__.split(".")[0] == "1"
@@ -92,6 +93,8 @@ def load_checkpoint(model: nn.Module, weights: str) -> nn.Module:
     Returns:
         nn.Module : retinanet model.
     """
+    if weights is None:
+        return model
     if weights.endswith(".pt"):  # pytorch format
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
@@ -109,8 +112,7 @@ def load_checkpoint(model: nn.Module, weights: str) -> nn.Module:
             raise e
         del ckpt
         return model
-    else:
-        return model
+    return model
 
 
 def parse():
@@ -231,12 +233,11 @@ def parse():
     return parser
 
 
-def parse_resize(resize_str: str) -> List[int]:
-    dims = resize_str.split(",")
-    dims = list(map(int, dims))
-    if len(dims) < 2:
-        dims.append(dims[0])
-    return dims
+def parse_resize(image_size: int) -> List[int]:
+    # dims = resize_str.split(",")
+    if not hasattr(image_size, "len"):
+        image_size = [image_size, image_size]
+    return image_size
 
 
 def validate(model, dataset, valid_loader):
@@ -295,9 +296,12 @@ def main():
 
     try:
         logdir = Config.logdir
-        curr_run = get_next_run(os.listdir(logdir))
+        prev_runs = os.listdir(logdir) if os.path.isdir(logdir) else []
+        curr_run = get_next_run(prev_runs)
         logdir = os.path.join(logdir, curr_run)
-        os.makedirs(logdir, exist_ok=True)
+        Path(logdir).mkdir(parents=True, exist_ok=True)
+        print(f"logdir configured as {logdir}")
+        # os.makedirs(logdir, exist_ok=True)
     except Exception as exc:
         raise exc
 
@@ -326,8 +330,9 @@ def main():
             )
         Config.val_image_dir = Config.image_dir
 
-    writer = SummaryWriter(logdir=logdir)
+    writer = CustomSummaryWriter(log_dir=logdir)
     img_dim = parse_resize(Config.image_size)
+
     if args.rank == 0:
         logger.info(f"training image dimensions: {img_dim[0]},{img_dim[1]}")
 
@@ -516,11 +521,12 @@ def main():
     stop = False
     map_avg, map_50, map_75, map_small = 0, 0, 0, 0
     try:
-        for epoch_num in range(args.epochs):
+        for epoch in range(Config.num_epochs):
+            torch.cuda.empty_cache()
             while not stop:
                 if dist.is_available() and distributed:
                     if args.dist_mode == "DDP":
-                        dataloader_train.sampler.set_epoch(epoch_num)
+                        dataloader_train.sampler.set_epoch(epoch)
                     retinanet.module.train()
                     retinanet.module.freeze_bn()
                 else:
@@ -538,7 +544,7 @@ def main():
                     leave=keep_pbar,
                 )
                 for iter_num, data in pbar:
-                    n_iter = epoch_num * len(dataloader_train) + iter_num
+                    n_iter = epoch * len(dataloader_train) + iter_num
 
                     for param_group in optimizer.param_groups:
                         lr = lr_schedule[n_iter]
@@ -562,10 +568,7 @@ def main():
 
                     if args.rank == 0:
                         writer.add_scalar("Learning rate", lr, n_iter)
-                    pbar_desc = f"""
-                            Epoch: {epoch_num} | lr = {lr:0.6f} | batch: {iter_num} | 
-                            cls: {classification_loss:.4f} | reg: {regression_loss:.4f}
-                    """
+                    pbar_desc = f"Epoch: {epoch} | steps: {n_iter} |lr = {lr:0.6f} | batch: {iter_num} | cls: {classification_loss:.4f} | reg: {regression_loss:.4f}"
                     pbar.set_description(pbar_desc)
                     pbar.update(1)
                     if bool(loss == 0):
@@ -629,7 +632,7 @@ def main():
                             ) as f:
                                 json.dump(results, f, indent=4)
                             stats = coco_eval.evaluate_coco(
-                                dataset_val, val_image_ids, args.logdir
+                                dataset_val, val_image_ids, logdir
                             )
                             map_avg, map_50, map_75, map_small = stats[:4]
                         else:
@@ -647,23 +650,19 @@ def main():
                         stop = early_stopping.update(map_50)
 
                         writer.add_scalar(
-                            "eval/map@0.5:0.95",
-                            map_avg,
-                            epoch_num * len(dataloader_train),
+                            "eval/map@0.5:0.95", map_avg, epoch * len(dataloader_train),
                         )
                         writer.add_scalar(
-                            "eval/map@0.5", map_50, epoch_num * len(dataloader_train)
+                            "eval/map@0.5", map_50, epoch * len(dataloader_train)
                         )
                         writer.add_scalar(
-                            "eval/map@0.75", map_75, epoch_num * len(dataloader_train)
+                            "eval/map@0.75", map_75, epoch * len(dataloader_train)
                         )
                         writer.add_scalar(
-                            "eval/map_small",
-                            map_small,
-                            epoch_num * len(dataloader_train),
+                            "eval/map_small", map_small, epoch * len(dataloader_train),
                         )
                         logger.info(
-                            f"Epoch: {epoch_num} | lr = {lr:.6f} |map@0.5:0.95 = {map_avg:.4f} | map@0.5 = {map_50:.4f} | map@0.75 = {map_75:.4f} | map-small = {map_small:.4f}"
+                            f"Epoch: {epoch} | lr = {lr:.6f} |map@0.5:0.95 = {map_avg:.4f} | map@0.5 = {map_50:.4f} | map@0.75 = {map_75:.4f} | map-small = {map_small:.4f}"
                         )
 
                 else:
@@ -682,10 +681,9 @@ def main():
                     "mAP_50": best_map,
                     "mAP_75": map_75,
                     "mAP_small": map_small,
-                    "runtime": f"{h}h {m}m {s}s",
                 },
             )
-
+            logger.info(f"total runtime: {h}h {m}m {s}s")
     retinanet.eval()
 
 
