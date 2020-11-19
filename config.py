@@ -7,6 +7,10 @@ class Config:
     train_json_path = "./train.json"
     val_json_path = "./val.json"
     negative_sampling_rate = None  # sample images with no annotations at batch level
+    normalize = dict()
+    normalize["mean"] = [0.485, 0.456, 0.406]
+    normalize["std"] = [0.229, 0.224, 0.225]
+    logdir = "./logs"
 
     # aug config
     augs = dict()
@@ -46,11 +50,13 @@ class Config:
     batch_size = 8
     workers = 0
     optimizer = "adam"
+    lr_schedule = "WarmupCosineAnnealing"
     base_lr = 1e-5
     final_lr = 0
     weight_decay = 1e-6
     warmup_epochs = 0
     start_warmup = 0
+    early_stopping = 10
     #
     # # distributed config
     # dist_mode = ["DDP"]

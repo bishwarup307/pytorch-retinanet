@@ -5,7 +5,7 @@ import torch.nn as nn
 import numpy as np
 import logging
 import colorama
-from typing import Union, Optional
+from typing import Union, Optional, List
 import os
 import copy
 
@@ -243,3 +243,110 @@ def remove_module(state_dict: OrderedDict):
         clean_state_dict[modified_key] = value
     return clean_state_dict
 
+
+class EarlyStopping:
+    def __init__(self, wait: int = 10, mode: str = "maximize"):
+        if mode == "maximize":
+            self.best_metric = -np.inf
+        elif mode == "minimize":
+            self.best_metric = np.inf
+        else:
+            raise ValueError("invalid mode specified")
+        self.mode = mode
+        self.wait = wait
+        self._reset_counter()
+
+    def _reset_counter(self):
+        self._counter = 0
+
+    def update(self, val):
+        if self.mode == "maximize":
+            if val >= self.best_metric:
+                self._reset_counter()
+            else:
+                self._counter += 1
+        else:
+            if val <= self.best_metric:
+                self._reset_counter()
+            else:
+                self._counter += 1
+
+        if self._counter > self.wait:
+            return True
+        return False
+
+
+def get_next_run(runs: List[str]):
+    curr_exp = max([int(x.replace("run", "")) for x in runs])
+    return "run" + str(curr_exp + 1)
+
+
+def get_runtime(seconds):
+    seconds = seconds % (24 * 3600)
+    hour = seconds // 3600
+    seconds %= 3600
+    minutes = seconds // 60
+    seconds %= 60
+    return hour, minutes, seconds
+
+
+def get_hparams(config):
+    hparams = dict()
+
+    # environment params
+    hparams["torch_version"] = torch.__version__
+    hparams["cuda_availble"] = torch.cuda.is_available()
+    hparams["cuda_version"] = torch.version.cuda
+    hparams["cudnn_version"] = torch.backends.cudnn.version()
+    hparams["n_gpu"] = torch.cuda.device_count()
+    hparams["gpu_model"] = torch.cuda.get_device_name(0)
+
+    # dataset params
+    hparams["dataset"] = config.dataset
+    hparams["image_dir"] = config.image_dir
+    hparams["val_image_dir"] = config.val_image_dir
+    hparams["train_json_path"] = config.train_json_path
+    hparams["val_json_path"] = config.val_json_path
+    hparams["image_size"] = config.image_size
+    hparams["nsr"] = config.negative_sampling_rate
+    hparams["normalize_mean"] = ",".join(list(map(str, config.normalize["mean"])))
+    hparams["normalize_std"] = ",".join(list(map(str, config.normalize["std"])))
+    hparams["logdir"] = config.logdir
+
+    # augs params
+    hparams["hflip"] = config.augs["hflip"]
+    hparams["vflip"] = config.augs["vflip"]
+    hparams["color_jitter"] = config.augs["color_jitter"]
+    hparams["brightness"] = config.augs["brightness"]
+    hparams["contrast"] = config.augs["contrast"]
+    hparams["gamma"] = config.augs["gamma"]
+    hparams["sharpness"] = config.augs["sharpness"]
+    hparams["gaussian_blur"] = config.augs["gaussian_blur"]
+    hparams["superpixels"] = config.augs["superpixels"]
+    hparams["additive_noise"] = config.augs["additive_noise"]
+    hparams["shiftscalerotate"] = config.augs["shiftscalerotate"]
+    hparams["perspective"] = config.augs["perspective"]
+    hparams["rgb_shift"] = ",".join(list(map(str, config.augs["rgb_shift"])))
+    hparams["cutout"] = ",".join(list(map(str, config.augs["cutout"])))
+    hparams["min_visibility"] = config.augs["min_visibility"]
+    hparams["min_area"] = config.augs["min_area"]
+
+    # model params
+    hparams["depth"] = config.backbone
+    hparams["pretrained"] = config.pretrained
+    hparams["from_checkpoint"] = config.weights
+
+    # learning params
+    hparams["num_epochs"] = config.num_epochs
+    hparams["batch_size"] = config.batch_size
+    hparams["workers"] = config.workers
+    hparams["optimizer"] = config.optimizer
+    hparams["lr_schedule"] = config.lr_schedule
+    hparams["base_lr"] = config.base_lr
+    hparams["final_lr"] = config.final_lr
+    hparams["warmup_epochs"] = config.warmup_epochs
+    hparams["start_warmup"] = config.start_warmup
+    hparams["weight_decay"] = config.weight_decay
+    hparams["early_stopping"] = config.early_stopping
+
+    return hparams

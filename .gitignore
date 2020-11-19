@@ -104,3 +104,9 @@ ENV/
 *.pth
 .vscode/
 .idea/
+
+# ignore mlflow logs
+mlruns/
+.mlruns/
+data/
+logs/

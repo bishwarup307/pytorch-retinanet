@@ -3,7 +3,7 @@ import glob
 import os
 import random
 import sys
-from typing import Tuple, Dict, Optional
+from typing import Tuple, Dict, Optional, List, Sequence
 import albumentations as A
 
 import cv2
@@ -104,7 +104,8 @@ class CocoDataset(Dataset):
         self,
         image_dir: str,
         json_path: str,
-        image_size: Tuple[int, int],
+        image_size: Sequence,
+        normalize: Optional[Dict] = None,
         transform: Optional[Dict] = None,
         return_ids: bool = False,
         nsr: float = None,
@@ -120,6 +121,11 @@ class CocoDataset(Dataset):
         self.image_dir = image_dir
         self.transform = transform
         self.image_size = image_size
+        try:
+            self.normalize_mean = normalize["mean"]
+            self.normalize_std = normalize["std"]
+        except TypeError:
+            self.normalize_mean, self.normalize_std = None, None
 
         self.coco = COCO(json_path)
         self.image_ids = self.coco.getImgIds()
@@ -158,8 +164,12 @@ class CocoDataset(Dataset):
             self.labels[value] = key
         # print(len(self.labels))
 
-    def _to_tensor(self, sample):
-        sample["img"] = torch.from_numpy((sample["img"] / 255.0).astype(np.float32))
+    def _to_tensor(self, sample, normalize=True):
+        if normalize:
+            normalizer = Normalizer(self.normalize_mean, self.normalize_std)
+            sample["img"] = normalizer(sample["img"])
+
+        sample["img"] = torch.from_numpy(sample["img"].astype(np.float32))
         sample["annot"] = torch.from_numpy(sample["annot"].astype(np.float32))
         return sample
 
@@ -168,11 +178,11 @@ class CocoDataset(Dataset):
 
     def __getitem__(self, idx):
 
-        img = self.load_image(idx, normalize=False)
+        img = self.load_image(idx, normalize=False)  # load image
         annot = self.load_annotations(idx)
         sample = {"img": img, "annot": annot}
         if self.image_size is not None:
-            resize = Resizer(self.image_size)
+            resize = Resizer(self.image_size)  # resize
             sample = resize(sample)
 
         if self.transform is not None:
@@ -590,18 +600,15 @@ class Augmenter(object):
 
 
 class Normalizer(object):
-    def __init__(self):
-        self.mean = np.array([[[0.485, 0.456, 0.406]]])
-        self.std = np.array([[[0.229, 0.224, 0.225]]])
+    def __init__(self, mean: Optional[List[float]], std: Optional[List[float]]):
+        self.mean = mean
+        self.std = std
 
-    def __call__(self, sample):
-
-        image, annots = sample["img"], sample["annot"]
-
-        return {
-            "img": ((image.astype(np.float32) - self.mean) / self.std),
-            "annot": annots,
-        }
+    def __call__(self, img: np.ndarray):
+        normalized_img = img.astype(np.float32) / 255.0
+        if self.mean is not None and self.std is not None:
+            normalized_img = (normalized_img - self.mean) / self.std
+        return normalized_img
 
 
 class UnNormalizer(object):
