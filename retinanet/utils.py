@@ -276,7 +276,7 @@ class EarlyStopping:
             else:
                 self._counter += 1
 
-        if self._counter > self.wait:
+        if self._counter >= self.wait:
             return True
         return False
 

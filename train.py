@@ -26,6 +26,7 @@ from retinanet.dataloader import (
     collater,
     eval_collate,
     AspectRatioBasedSampler,
+    stack_labels,
 )
 from retinanet.larc import LARC
 from retinanet.utils import (
@@ -35,6 +36,7 @@ from retinanet.utils import (
     get_next_run,
     get_runtime,
     CustomSummaryWriter,
+    AverageMeter,
 )
 
 assert torch.__version__.split(".")[0] == "1"
@@ -242,6 +244,7 @@ def parse_resize(image_size: int) -> List[int]:
 
 def validate(model, dataset, valid_loader):
     model.eval()
+    cls_loss, reg_loss = [], []
 
     for i, (images, labels, scales, offset_x, offset_y, image_ids) in tqdm(
         enumerate(valid_loader), total=len(valid_loader), leave=keep_pbar
@@ -252,11 +255,18 @@ def validate(model, dataset, valid_loader):
         # logger.debug(image_ids)
 
         with torch.no_grad():
-            img_idx, confs, classes, bboxes = model(images.float().cuda())
+            img_idx, confs, classes, bboxes, cl, reg = model(
+                {
+                    "img": images.float().cuda(),
+                    "labels": stack_labels(labels).float().cuda(),
+                }
+            )
         img_idx = img_idx.cpu().numpy()
         confs = confs.cpu().numpy()
         classes = classes.cpu().numpy()
         bboxes = bboxes.cpu().numpy().astype(np.int32)
+        cls_loss.append(cl.item())
+        reg_loss.append(reg.item())
 
         if len(img_idx):
             # logger.debug(f"len(img_idx) = {len(img_idx)}")
@@ -285,7 +295,9 @@ def validate(model, dataset, valid_loader):
                     "bbox": bbox.tolist(),
                 }
                 results.append(image_result)
+
     model.train()
+    return np.mean(cls_loss), np.mean(reg_loss)
 
 
 def main():
@@ -519,7 +531,9 @@ def main():
     global keep_pbar
     keep_pbar = not (distributed and args.dist_mode == "DDP")
 
-    early_stopping = EarlyStopping(wait=Config.early_stopping, mode="maximize")
+    early_stopping = EarlyStopping(wait=Config.early_stopping, mode="minimize")
+    cls_loss = AverageMeter()
+    reg_loss = AverageMeter()
 
     stop = False
     map_avg, map_50, map_75, map_small = 0, 0, 0, 0
@@ -548,6 +562,8 @@ def main():
                 leave=keep_pbar,
             )
             for iter_num, data in pbar:
+                cur_batch_size = data["img"].size(0)
+
                 n_iter = epoch * len(dataloader_train) + iter_num
 
                 for param_group in optimizer.param_groups:
@@ -568,11 +584,15 @@ def main():
 
                 classification_loss = classification_loss.mean()
                 regression_loss = regression_loss.mean()
+
+                cls_loss.update(classification_loss.item(), cur_batch_size)
+                reg_loss.update(regression_loss.item(), cur_batch_size)
+
                 loss = classification_loss + regression_loss
 
                 if args.rank == 0:
                     writer.add_scalar("Learning rate", lr, n_iter)
-                pbar_desc = f"Epoch: {epoch} | steps: {n_iter} |lr = {lr:0.6f} | batch: {iter_num} | cls: {classification_loss:.4f} | reg: {regression_loss:.4f}"
+                pbar_desc = f"Epoch: {epoch} | steps: {n_iter} |lr = {lr:0.6f} | batch: {iter_num} | cls: {cls_loss.avg:.4f} | reg: {reg_loss.avg:.4f}"
                 pbar.set_description(pbar_desc)
                 pbar.update(1)
                 if bool(loss == 0):
@@ -623,7 +643,11 @@ def main():
                     dataloader_val = None
 
                 if dataloader_val is not None:
-                    validate(retinanet, dataset_val, dataloader_val)
+                    val_cls_loss, val_reg_loss = validate(
+                        retinanet, dataset_val, dataloader_val
+                    )
+                else:
+                    val_cls_loss, val_reg_loss = -1, -1
 
                 if args.rank == 0:
                     if len(results):
@@ -639,15 +663,23 @@ def main():
                         map_avg, map_50, map_75, map_small = [-1] * 4
 
                     if map_50 > best_map:
-                        torch.save(
-                            retinanet.state_dict(),
-                            os.path.join(
-                                logdir,
-                                f"retinanet_{Config.backbone.replace('-', '_')}_best.pt",
-                            ),
-                        )
                         best_map = map_50
-                    stop = early_stopping.update(map_50)
+                    torch.save(
+                        retinanet.state_dict(),
+                        os.path.join(
+                            logdir,
+                            f"retinanet_{Config.backbone.replace('-', '_')}_epoch_{epoch}.pt",
+                        ),
+                    )
+
+                    stop = early_stopping.update(val_cls_loss)
+
+                    writer.add_scalar(
+                        "eval/cls_loss", val_cls_loss, epoch * len(dataloader_train)
+                    )
+                    writer.add_scalar(
+                        "eval/reg_loss", val_reg_loss, epoch * len(dataloader_train)
+                    )
 
                     writer.add_scalar(
                         "eval/map@0.5:0.95", map_avg, epoch * len(dataloader_train),
@@ -664,12 +696,20 @@ def main():
                     logger.info(
                         f"Epoch: {epoch} | lr = {lr:.6f} |map@0.5:0.95 = {map_avg:.4f} | map@0.5 = {map_50:.4f} | map@0.75 = {map_75:.4f} | map-small = {map_small:.4f}"
                     )
+                    logger.info(
+                        f"cls_loss_val: {val_cls_loss:.4f}, reg_loss_val: {val_reg_loss:.4f}"
+                    )
 
             else:
                 raise ValueError("`dataset` is not COCO")
     except KeyboardInterrupt:
         print("Interrupted")
     finally:
+        print(f"map_avg: {map_avg:.4f}")
+        print(f"map_50: {map_50:.4f}")
+        print(f"map_75: {map_75:.4f}")
+        print(f"map_small: {map_small:.4f}")
+
         if args.rank == 0:
             runtime = int(time.perf_counter() - start)
             h, m, s = get_runtime(runtime)
@@ -683,6 +723,8 @@ def main():
                 },
             )
             logger.info(f"total runtime: {h}h {m}m {s}s")
+            with open(os.path.join(logdir, "hparams.json"), "w") as f:
+                json.dump(hparams, f, indent=2)
     retinanet.eval()
 
 

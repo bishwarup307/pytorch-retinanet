@@ -273,7 +273,11 @@ class ResNet(nn.Module):
         if self.training:
             img_batch, annotations = inputs
         else:
-            img_batch = inputs
+            try:
+                img_batch, annotations = inputs["img"], inputs["labels"]
+            except TypeError:
+                img_batch = inputs
+                annotations = None
 
         x = self.conv1(img_batch)
         x = self.bn1(x)
@@ -303,6 +307,14 @@ class ResNet(nn.Module):
         if self.training:
             return self.focalLoss(classification, regression, anchors, annotations)
         else:
+            if annotations is not None:
+                cls_loss, reg_loss = self.focalLoss(
+                    classification, regression, anchors, annotations
+                )
+                cls_loss = cls_loss.detach()
+                reg_loss = reg_loss.detach()
+            else:
+                cls_loss, reg_loss = None, None
             batch_size = classification.shape[0]
             transformed_anchors = self.regressBoxes(anchors, regression)
             transformed_anchors = self.clipBoxes(transformed_anchors, img_batch)
@@ -342,7 +354,14 @@ class ResNet(nn.Module):
             final_bboxes = selected_bboxes[keep_indices]
             final_scores = scores[mask][keep_indices]
             final_class_indices = selected_class_indices[keep_indices]
-            return final_image_idx, final_scores, final_class_indices, final_bboxes
+            return (
+                final_image_idx,
+                final_scores,
+                final_class_indices,
+                final_bboxes,
+                cls_loss,
+                reg_loss,
+            )
 
             # transformed_anchors = self.regressBoxes(anchors, regression)
             # transformed_anchors = self.clipBoxes(transformed_anchors, img_batch)

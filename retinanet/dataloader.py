@@ -91,6 +91,8 @@ def _transform_image(sample: Dict, transforms: Dict):
             ],
             axis=1,
         )
+    else:
+        annot = np.array([])
     # print(annot.shape)
     sample["img"] = transformed["image"]
     sample["annot"] = annot
@@ -479,23 +481,38 @@ def collater(data):
         img = imgs[i]
         padded_imgs[i, : int(img.shape[0]), : int(img.shape[1]), :] = img
 
-    max_num_annots = max(annot.shape[0] for annot in annots)
+    # max_num_annots = max(annot.shape[0] for annot in annots)
+    #
+    # if max_num_annots > 0:
+    #
+    #     annot_padded = torch.ones((len(annots), max_num_annots, 5)) * -1
+    #
+    #     if max_num_annots > 0:
+    #         for idx, annot in enumerate(annots):
+    #             # print(annot.shape)
+    #             if annot.shape[0] > 0:
+    #                 annot_padded[idx, : annot.shape[0], :] = annot
+    # else:
+    #     annot_padded = torch.ones((len(annots), 1, 5)) * -1
+    annot_padded = stack_labels(annots)
+    padded_imgs = padded_imgs.permute(0, 3, 1, 2).contiguous()
 
+    return {"img": padded_imgs, "annot": annot_padded}
+
+
+def stack_labels(labels):
+
+    max_num_annots = max(annot.shape[0] for annot in labels)
     if max_num_annots > 0:
-
-        annot_padded = torch.ones((len(annots), max_num_annots, 5)) * -1
-
+        annot_padded = torch.ones((len(labels), max_num_annots, 5)) * -1
         if max_num_annots > 0:
-            for idx, annot in enumerate(annots):
+            for idx, annot in enumerate(labels):
                 # print(annot.shape)
                 if annot.shape[0] > 0:
                     annot_padded[idx, : annot.shape[0], :] = annot
     else:
-        annot_padded = torch.ones((len(annots), 1, 5)) * -1
-
-    padded_imgs = padded_imgs.permute(0, 3, 1, 2).contiguous()
-
-    return {"img": padded_imgs, "annot": annot_padded}
+        annot_padded = torch.ones((len(labels), 1, 5)) * -1
+    return annot_padded
 
 
 def letterbox(image, expected_size, fill_value=0):

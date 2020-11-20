@@ -14,40 +14,40 @@ class Config:
 
     # aug config
     augs = dict()
-    augs["hflip"] = False  # horizontal flip, either False or a probability
+    augs["hflip"] = 0.5  # horizontal flip, either False or a probability
     augs["vflip"] = False  # vertical flip, either False or a probability
-    augs["color_jitter"] = False  # Color jitter, either False or a probability
+    augs["color_jitter"] = 0.3  # Color jitter, either False or a probability
     augs["brightness"] = False  # Brightness adjustment, either False or a probability
     augs["contrast"] = False  # Contrast adjustment, either False or a probability
-    augs["shiftscalerotate"] = False  # translation, either False or a probability
+    augs["shiftscalerotate"] = 0.5  # translation, either False or a probability
     augs["gamma"] = False  # gamma correction, either False or a probability
     augs[
         "rgb_shift"
     ] = False  # rgb shift, either False or a tuple (r_shift, g_shift, b_shift, proba)
-    augs["sharpness"] = False  # shaprness adjustment, either False or a probability
+    augs["sharpness"] = 0.5  # shaprness adjustment, either False or a probability
     augs[
         "perspective"
     ] = False  # perspective transformation, either False or a probability
     augs[
         "cutout"
     ] = False  # random cutout, either False or a tuple (proba, max_h_cutout, max_w_cutout)
-    augs["gaussian_blur"] = False  # Gaussian blur, either False or a probability
+    augs["gaussian_blur"] = 0.3  # Gaussian blur, either False or a probability
     augs["superpixels"] = False  # Superpixels, either False or a probability
     augs[
         "additive_noise"
-    ] = False  # Gaussian Additive Noise, either False or a probability
+    ] = 0.3  # Gaussian Additive Noise, either False or a probability
     augs["min_visibility"] = 0.8
     augs["min_area"] = 450
 
     # model config
-    backbone = "resnet-34"
+    backbone = "resnet-50"
     pretrained = True
     weights = None
     image_size = 512
 
     # learning config
     num_epochs = 100
-    batch_size = 32
+    batch_size = 12
     workers = 8
     optimizer = "adam"
     lr_schedule = "WarmupCosineAnnealing"
