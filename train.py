@@ -324,6 +324,7 @@ def main():
     if args.rank == 0:
         start = time.perf_counter()
         logger.info(f"distributed mode: {args.dist_mode if distributed else 'OFF'}")
+        logger.info(f"pretrained weights for backbone: {Config.pretrained}")
 
     if Config.val_image_dir is None:
         if args.rank == 0:
@@ -337,9 +338,6 @@ def main():
 
     if args.rank == 0:
         logger.info(f"training image dimensions: {img_dim[0]},{img_dim[1]}")
-
-    # print out basic info
-    if args.rank == 0:
         logger.info("CUDA available: {}".format(torch.cuda.is_available()))
         logger.info(f"torch.__version__ = {torch.__version__}")
 
