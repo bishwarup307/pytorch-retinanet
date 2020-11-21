@@ -37,18 +37,22 @@ class Config:
 
     # model config
     backbone = "resnet-50"
-    pretrained = True
-    freeze_bn = True
+    pretrained = False
+    freeze_bn = False
     weights = None
     image_size = 512
+    alpha = 0.25  # focal loss param
+    gamma = 2.0  # focal loss param
+    nms_iou_threshold = 0.5
+    conf_threshold = 0.1
 
     # learning config
     num_epochs = 100
-    batch_size = 12
+    batch_size = 16
     workers = 8
     optimizer = "adam"
     lr_schedule = "WarmupCosineAnnealing"
-    base_lr = 1e-5
+    base_lr = 5e-5
     final_lr = 0
     weight_decay = 1e-6
     warmup_epochs = 0

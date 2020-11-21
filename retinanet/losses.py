@@ -18,11 +18,7 @@ def calc_iou(a, b):
     iw = torch.clamp(iw, min=0)
     ih = torch.clamp(ih, min=0)
 
-    ua = (
-        torch.unsqueeze((a[:, 2] - a[:, 0]) * (a[:, 3] - a[:, 1]), dim=1)
-        + area
-        - iw * ih
-    )
+    ua = torch.unsqueeze((a[:, 2] - a[:, 0]) * (a[:, 3] - a[:, 1]), dim=1) + area - iw * ih
 
     ua = torch.clamp(ua, min=1e-6)
 
@@ -34,11 +30,14 @@ def calc_iou(a, b):
 
 
 class FocalLoss(nn.Module):
-    # def __init__(self):
+    def __init__(self, alpha=0.25, gamma=2.0):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
 
     def forward(self, classifications, regressions, anchors, annotations):
-        alpha = 0.25
-        gamma = 2.0
+        # alpha = 0.25
+        # gamma = 2.0
         batch_size = classifications.shape[0]
         classification_losses = []
         regression_losses = []
@@ -63,11 +62,11 @@ class FocalLoss(nn.Module):
             if bbox_annotation.shape[0] == 0:
                 # print("here")
                 if torch.cuda.is_available():
-                    alpha_factor = torch.ones(classification.shape).cuda() * alpha
+                    alpha_factor = torch.ones(classification.shape).cuda() * self.alpha
 
                     alpha_factor = 1.0 - alpha_factor
                     focal_weight = classification
-                    focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
+                    focal_weight = alpha_factor * torch.pow(focal_weight, self.gamma)
 
                     bce = -(torch.log(1.0 - classification))
 
@@ -77,11 +76,11 @@ class FocalLoss(nn.Module):
                     regression_losses.append(torch.tensor(0).float().cuda())
 
                 else:
-                    alpha_factor = torch.ones(classification.shape) * alpha
+                    alpha_factor = torch.ones(classification.shape) * self.alpha
 
                     alpha_factor = 1.0 - alpha_factor
                     focal_weight = classification
-                    focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
+                    focal_weight = alpha_factor * torch.pow(focal_weight, self.gamma)
 
                     bce = -(torch.log(1.0 - classification))
 
@@ -116,22 +115,16 @@ class FocalLoss(nn.Module):
             assigned_annotations = bbox_annotation[IoU_argmax, :]
 
             targets[positive_indices, :] = 0
-            targets[
-                positive_indices, assigned_annotations[positive_indices, 4].long()
-            ] = 1
+            targets[positive_indices, assigned_annotations[positive_indices, 4].long()] = 1
 
             if torch.cuda.is_available():
-                alpha_factor = torch.ones(targets.shape).cuda() * alpha
+                alpha_factor = torch.ones(targets.shape).cuda() * self.alpha
             else:
-                alpha_factor = torch.ones(targets.shape) * alpha
+                alpha_factor = torch.ones(targets.shape) * self.alpha
 
-            alpha_factor = torch.where(
-                torch.eq(targets, 1.0), alpha_factor, 1.0 - alpha_factor
-            )
-            focal_weight = torch.where(
-                torch.eq(targets, 1.0), 1.0 - classification, classification
-            )
-            focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
+            alpha_factor = torch.where(torch.eq(targets, 1.0), alpha_factor, 1.0 - alpha_factor)
+            focal_weight = torch.where(torch.eq(targets, 1.0), 1.0 - classification, classification)
+            focal_weight = alpha_factor * torch.pow(focal_weight, self.gamma)
 
             bce = -(
                 targets * torch.log(classification)
@@ -143,9 +136,7 @@ class FocalLoss(nn.Module):
 
             if torch.cuda.is_available():
                 cls_loss = torch.where(
-                    torch.ne(targets, -1.0),
-                    cls_loss,
-                    torch.zeros(cls_loss.shape).cuda(),
+                    torch.ne(targets, -1.0), cls_loss, torch.zeros(cls_loss.shape).cuda(),
                 )
             else:
                 cls_loss = torch.where(

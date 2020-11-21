@@ -415,15 +415,50 @@ def main():
     depth = int(Config.backbone.split("-")[-1])
     # Create the model
     if depth == 18:
-        retinanet = model.resnet18(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet18(
+            num_classes=dataset_train.num_classes,
+            pretrained=Config.pretrained,
+            nms_iou_threshold=Config.nms_iou_threshold,
+            conf_threshold=Config.conf_threshold,
+            alpha=Config.alpha,
+            gamma=Config.gamma,
+        )
     elif depth == 34:
-        retinanet = model.resnet34(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet34(
+            num_classes=dataset_train.num_classes,
+            pretrained=Config.pretrained,
+            nms_iou_threshold=Config.nms_iou_threshold,
+            conf_threshold=Config.conf_threshold,
+            alpha=Config.alpha,
+            gamma=Config.gamma,
+        )
     elif depth == 50:
-        retinanet = model.resnet50(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet50(
+            num_classes=dataset_train.num_classes,
+            pretrained=Config.pretrained,
+            nms_iou_threshold=Config.nms_iou_threshold,
+            conf_threshold=Config.conf_threshold,
+            alpha=Config.alpha,
+            gamma=Config.gamma,
+        )
     elif depth == 101:
-        retinanet = model.resnet101(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet101(
+            num_classes=dataset_train.num_classes,
+            pretrained=Config.pretrained,
+            nms_iou_threshold=Config.nms_iou_threshold,
+            conf_threshold=Config.conf_threshold,
+            alpha=Config.alpha,
+            gamma=Config.gamma,
+        )
     elif depth == 152:
-        retinanet = model.resnet152(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet152(
+            num_classes=dataset_train.num_classes,
+            pretrained=Config.pretrained,
+            nms_iou_threshold=Config.nms_iou_threshold,
+            conf_threshold=Config.conf_threshold,
+            alpha=Config.alpha,
+            gamma=Config.gamma,
+        )
     else:
         raise ValueError(
             "Unsupported backbone specified, deppth must be one of 18, 34, 50, 101, 152"
