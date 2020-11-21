@@ -356,6 +356,9 @@ def get_hparams(config):
     hparams["depth"] = config.backbone
     hparams["pretrained"] = config.pretrained
     hparams["from_checkpoint"] = config.weights
+    hparams["freeze_bn"] = config.freeze_bn
+    hparams["focal_alpha"] = config.alpha
+    hparams["focal_gamma"] = config.gamma
 
     # learning params
     hparams["num_epochs"] = config.num_epochs

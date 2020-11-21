@@ -37,7 +37,7 @@ class Config:
 
     # model config
     backbone = "resnet-50"
-    pretrained = False
+    pretrained = True
     freeze_bn = False
     weights = None
     image_size = 512
@@ -48,7 +48,7 @@ class Config:
 
     # learning config
     num_epochs = 100
-    batch_size = 16
+    batch_size = 12
     workers = 8
     optimizer = "adam"
     lr_schedule = "WarmupCosineAnnealing"
