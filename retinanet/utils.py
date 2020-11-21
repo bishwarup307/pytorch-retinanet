@@ -284,6 +284,7 @@ class EarlyStopping:
 def get_next_run(runs: List[str]):
     if not len(runs):
         return "run0"
+    runs = [run for run in runs if run.startswith("run")]
     curr_exp = max([int(x.replace("run", "")) for x in runs])
     return "run" + str(curr_exp + 1)
 

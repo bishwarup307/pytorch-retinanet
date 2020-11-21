@@ -52,7 +52,7 @@ class Config:
     workers = 8
     optimizer = "adam"
     lr_schedule = "WarmupCosineAnnealing"
-    base_lr = 5e-5
+    base_lr = 1e-4
     final_lr = 0
     weight_decay = 1e-6
     warmup_epochs = 0
