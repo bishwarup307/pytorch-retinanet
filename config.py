@@ -25,23 +25,20 @@ class Config:
         "rgb_shift"
     ] = False  # rgb shift, either False or a tuple (r_shift, g_shift, b_shift, proba)
     augs["sharpness"] = 0.5  # shaprness adjustment, either False or a probability
-    augs[
-        "perspective"
-    ] = False  # perspective transformation, either False or a probability
+    augs["perspective"] = False  # perspective transformation, either False or a probability
     augs[
         "cutout"
     ] = False  # random cutout, either False or a tuple (proba, max_h_cutout, max_w_cutout)
     augs["gaussian_blur"] = 0.3  # Gaussian blur, either False or a probability
     augs["superpixels"] = False  # Superpixels, either False or a probability
-    augs[
-        "additive_noise"
-    ] = 0.3  # Gaussian Additive Noise, either False or a probability
+    augs["additive_noise"] = 0.3  # Gaussian Additive Noise, either False or a probability
     augs["min_visibility"] = 0.8
     augs["min_area"] = 450
 
     # model config
     backbone = "resnet-50"
     pretrained = True
+    freeze_bn = True
     weights = None
     image_size = 512
 

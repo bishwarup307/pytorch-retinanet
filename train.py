@@ -3,6 +3,7 @@ import collections
 import json
 import math
 import os
+from os import confstr
 import time
 from pathlib import Path
 from typing import List
@@ -69,10 +70,7 @@ def init_distributed_mode(args):
 
     # prepare distributed
     dist.init_process_group(
-        backend="nccl",
-        init_method=args.dist_url,
-        world_size=args.world_size,
-        rank=args.rank,
+        backend="nccl", init_method=args.dist_url, world_size=args.world_size, rank=args.rank,
     )
 
     # set cuda device
@@ -104,9 +102,7 @@ def load_checkpoint(model: nn.Module, weights: str) -> nn.Module:
         # load model
         try:
             ckpt = {
-                k: v
-                for k, v in ckpt.state_dict().items()
-                if model.state_dict()[k].shape == v.shape
+                k: v for k, v in ckpt.state_dict().items() if model.state_dict()[k].shape == v.shape
             }
             model.load_state_dict(ckpt, strict=True)
             logger.info("Resuming training from checkpoint in {}".format(weights))
@@ -204,10 +200,7 @@ def parse():
                         it is set automatically and should not be passed as argument""",
     )
     parser.add_argument(
-        "--local_rank",
-        default=0,
-        type=int,
-        help="this argument is not used and should be ignored",
+        "--local_rank", default=0, type=int, help="this argument is not used and should be ignored",
     )
     # parser.add_argument(
     #     "--base_lr", default=0.001, type=float, help="base learning rate"
@@ -256,10 +249,7 @@ def validate(model, dataset, valid_loader):
 
         with torch.no_grad():
             img_idx, confs, classes, bboxes, cl, reg = model(
-                {
-                    "img": images.float().cuda(),
-                    "labels": stack_labels(labels).float().cuda(),
-                }
+                {"img": images.float().cuda(), "labels": stack_labels(labels).float().cuda(),}
             )
         img_idx = img_idx.cpu().numpy()
         confs = confs.cpu().numpy()
@@ -425,25 +415,15 @@ def main():
     depth = int(Config.backbone.split("-")[-1])
     # Create the model
     if depth == 18:
-        retinanet = model.resnet18(
-            num_classes=dataset_train.num_classes, pretrained=True
-        )
+        retinanet = model.resnet18(num_classes=dataset_train.num_classes, pretrained=True)
     elif depth == 34:
-        retinanet = model.resnet34(
-            num_classes=dataset_train.num_classes, pretrained=True
-        )
+        retinanet = model.resnet34(num_classes=dataset_train.num_classes, pretrained=True)
     elif depth == 50:
-        retinanet = model.resnet50(
-            num_classes=dataset_train.num_classes, pretrained=True
-        )
+        retinanet = model.resnet50(num_classes=dataset_train.num_classes, pretrained=True)
     elif depth == 101:
-        retinanet = model.resnet101(
-            num_classes=dataset_train.num_classes, pretrained=True
-        )
+        retinanet = model.resnet101(num_classes=dataset_train.num_classes, pretrained=True)
     elif depth == 152:
-        retinanet = model.resnet152(
-            num_classes=dataset_train.num_classes, pretrained=True
-        )
+        retinanet = model.resnet152(num_classes=dataset_train.num_classes, pretrained=True)
     else:
         raise ValueError(
             "Unsupported backbone specified, deppth must be one of 18, 34, 50, 101, 152"
@@ -476,13 +456,9 @@ def main():
         optimizer = LARC(optimizer=optimizer, trust_coefficient=0.001, clip=True)
 
     warmup_lr_schedule = np.linspace(
-        Config.start_warmup,
-        Config.base_lr,
-        len(dataloader_train) * Config.warmup_epochs,
+        Config.start_warmup, Config.base_lr, len(dataloader_train) * Config.warmup_epochs,
     )
-    iters = np.arange(
-        len(dataloader_train) * (Config.num_epochs - Config.warmup_epochs)
-    )
+    iters = np.arange(len(dataloader_train) * (Config.num_epochs - Config.warmup_epochs))
     cosine_lr_schedule = np.array(
         [
             Config.final_lr
@@ -493,10 +469,7 @@ def main():
                 + math.cos(
                     math.pi
                     * t
-                    / (
-                        len(dataloader_train)
-                        * (Config.num_epochs - Config.warmup_epochs)
-                    )
+                    / (len(dataloader_train) * (Config.num_epochs - Config.warmup_epochs))
                 )
             )
             for t in iters
@@ -513,10 +486,12 @@ def main():
 
     if dist.is_available() and distributed:
         retinanet.module.train()
-        retinanet.module.freeze_bn()
+        if Config.freeze_bn:
+            retinanet.module.freeze_bn()
     else:
         retinanet.train()
-        retinanet.freeze_bn()
+        if Config.freeze_bn:
+            retinanet.freeze_bn()
 
     if args.rank == 0:
         logger.info("Number of training images: {}".format(len(dataset_train)))
@@ -546,21 +521,19 @@ def main():
                 if args.dist_mode == "DDP":
                     dataloader_train.sampler.set_epoch(epoch)
                 retinanet.module.train()
-                retinanet.module.freeze_bn()
+                if Config.freeze_bn:
+                    retinanet.module.freeze_bn()
             else:
                 retinanet.train()
-                retinanet.freeze_bn()
+                if Config.freeze_bn:
+                    retinanet.freeze_bn()
             # retinanet.module.freeze_bn()
 
             epoch_loss = []
             results = []
             val_image_ids = []
 
-            pbar = tqdm(
-                enumerate(dataloader_train),
-                total=len(dataloader_train),
-                leave=keep_pbar,
-            )
+            pbar = tqdm(enumerate(dataloader_train), total=len(dataloader_train), leave=keep_pbar,)
             for iter_num, data in pbar:
                 cur_batch_size = data["img"].size(0)
 
@@ -643,21 +616,15 @@ def main():
                     dataloader_val = None
 
                 if dataloader_val is not None:
-                    val_cls_loss, val_reg_loss = validate(
-                        retinanet, dataset_val, dataloader_val
-                    )
+                    val_cls_loss, val_reg_loss = validate(retinanet, dataset_val, dataloader_val)
                 else:
                     val_cls_loss, val_reg_loss = -1, -1
 
                 if args.rank == 0:
                     if len(results):
-                        with open(
-                            os.path.join(logdir, "val_bbox_results.json"), "w"
-                        ) as f:
+                        with open(os.path.join(logdir, "val_bbox_results.json"), "w") as f:
                             json.dump(results, f, indent=4)
-                        stats = coco_eval.evaluate_coco(
-                            dataset_val, val_image_ids, logdir
-                        )
+                        stats = coco_eval.evaluate_coco(dataset_val, val_image_ids, logdir)
                         map_avg, map_50, map_75, map_small = stats[:4]
                     else:
                         map_avg, map_50, map_75, map_small = [-1] * 4
@@ -674,22 +641,14 @@ def main():
 
                     stop = early_stopping.update(val_cls_loss)
 
-                    writer.add_scalar(
-                        "eval/cls_loss", val_cls_loss, epoch * len(dataloader_train)
-                    )
-                    writer.add_scalar(
-                        "eval/reg_loss", val_reg_loss, epoch * len(dataloader_train)
-                    )
+                    writer.add_scalar("eval/cls_loss", val_cls_loss, epoch * len(dataloader_train))
+                    writer.add_scalar("eval/reg_loss", val_reg_loss, epoch * len(dataloader_train))
 
                     writer.add_scalar(
                         "eval/map@0.5:0.95", map_avg, epoch * len(dataloader_train),
                     )
-                    writer.add_scalar(
-                        "eval/map@0.5", map_50, epoch * len(dataloader_train)
-                    )
-                    writer.add_scalar(
-                        "eval/map@0.75", map_75, epoch * len(dataloader_train)
-                    )
+                    writer.add_scalar("eval/map@0.5", map_50, epoch * len(dataloader_train))
+                    writer.add_scalar("eval/map@0.75", map_75, epoch * len(dataloader_train))
                     writer.add_scalar(
                         "eval/map_small", map_small, epoch * len(dataloader_train),
                     )
