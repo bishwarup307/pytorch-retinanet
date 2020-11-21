@@ -57,4 +57,4 @@ class Config:
     weight_decay = 1e-6
     warmup_epochs = 0
     start_warmup = 0
-    early_stopping = 10
+    early_stopping = -1

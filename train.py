@@ -540,13 +540,13 @@ def main():
     keep_pbar = not (distributed and args.dist_mode == "DDP")
 
     early_stopping = EarlyStopping(wait=Config.early_stopping, mode="minimize")
-    cls_loss = AverageMeter()
-    reg_loss = AverageMeter()
 
     stop = False
     map_avg, map_50, map_75, map_small = 0, 0, 0, 0
     try:
         for epoch in range(Config.num_epochs):
+            cls_loss = AverageMeter()
+            reg_loss = AverageMeter()
             torch.cuda.empty_cache()
             if stop:
                 break
