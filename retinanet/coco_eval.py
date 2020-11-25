@@ -17,7 +17,8 @@ logger = get_logger(__name__, level="info")
 def evaluate_coco(
     dataset,
     val_image_ids,
-    logdir
+    logdir=None,
+    predictions=None
     # dataset, model, logdir, batch_size, num_workers, writer=None, n_iter=None, threshold=0.05
 ):
 
@@ -119,8 +120,12 @@ def evaluate_coco(
     # json.dump(results, open("val_bbox_results.json".format(dataset.set_name), "w"), indent=4)
 
     # load results in COCO evaluation tool
+    prediction_path = (
+        os.path.join(logdir, "val_bbox_results.json") if predictions is None else predictions
+    )
+
     coco_true = dataset.coco
-    coco_pred = coco_true.loadRes(os.path.join(logdir, "val_bbox_results.json"))
+    coco_pred = coco_true.loadRes(prediction_path)
 
     # run COCO evaluation
     coco_eval = COCOeval(coco_true, coco_pred, "bbox")

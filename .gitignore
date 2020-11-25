@@ -110,3 +110,5 @@ mlruns/
 .mlruns/
 data/
 logs/
+
+eval_results.json

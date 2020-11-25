@@ -2,11 +2,11 @@ class Config:
 
     # dataset config
     dataset = "coco"
-    image_dir = "/home/bishwarup/EV/v0.2.2/data/images"
+    image_dir = "/home/bishwarup/EV/v0.2.2/data/mixed_images"
     val_image_dir = None  # if validation images are stored elsewhere
-    train_json_path = "/home/bishwarup/EV/v0.2.2/data/annotations/train_non_empty.json"
-    val_json_path = "/home/bishwarup/EV/v0.2.2/data/annotations/val_non_empty.json"
-    negative_sampling_rate = None  # sample images with no annotations at batch level
+    train_json_path = "/home/bishwarup/EV/v0.2.2/data/annotations/train_mixed.json"
+    val_json_path = "/home/bishwarup/EV/v0.2.2/data/annotations/val_mixed.json"
+    negative_sampling_rate = 0.1  # sample images with no annotations at batch level
     normalize = dict()
     normalize["mean"] = [0.485, 0.456, 0.406]
     normalize["std"] = [0.229, 0.224, 0.225]

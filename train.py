@@ -366,7 +366,6 @@ def main():
             batch_size=Config.batch_size,
             num_workers=Config.workers,
             collate_fn=collater,
-            shuffle=True,
         )
 
     elif Config.negative_sampling_rate is not None:
@@ -382,7 +381,6 @@ def main():
             collate_fn=collater,
             sampler=weighted_sampler,
             batch_size=Config.batch_size,
-            shuffle=True,
             pin_memory=True,
         )
 

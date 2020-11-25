@@ -25,23 +25,31 @@ class PyramidFeatures(nn.Module):
         # upsample C5 to get P5 from the FPN paper
         self.P5_1 = nn.Conv2d(C5_size, feature_size, kernel_size=1, stride=1, padding=0)
         self.P5_upsampled = nn.Upsample(scale_factor=2, mode="nearest")
-        self.P5_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=1, padding=1)
+        self.P5_2 = nn.Conv2d(
+            feature_size, feature_size, kernel_size=3, stride=1, padding=1
+        )
 
         # add P5 elementwise to C4
         self.P4_1 = nn.Conv2d(C4_size, feature_size, kernel_size=1, stride=1, padding=0)
         self.P4_upsampled = nn.Upsample(scale_factor=2, mode="nearest")
-        self.P4_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=1, padding=1)
+        self.P4_2 = nn.Conv2d(
+            feature_size, feature_size, kernel_size=3, stride=1, padding=1
+        )
 
         # add P4 elementwise to C3
         self.P3_1 = nn.Conv2d(C3_size, feature_size, kernel_size=1, stride=1, padding=0)
-        self.P3_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=1, padding=1)
+        self.P3_2 = nn.Conv2d(
+            feature_size, feature_size, kernel_size=3, stride=1, padding=1
+        )
 
         # "P6 is obtained via a 3x3 stride-2 conv on C5"
         self.P6 = nn.Conv2d(C5_size, feature_size, kernel_size=3, stride=2, padding=1)
 
         # "P7 is computed by applying ReLU followed by a 3x3 stride-2 conv on P6"
         self.P7_1 = nn.ReLU()
-        self.P7_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=2, padding=1)
+        self.P7_2 = nn.Conv2d(
+            feature_size, feature_size, kernel_size=3, stride=2, padding=1
+        )
 
     def forward(self, inputs):
         C3, C4, C5 = inputs
@@ -108,7 +116,12 @@ class RegressionModel(nn.Module):
 
 class ClassificationModel(nn.Module):
     def __init__(
-        self, num_features_in, num_anchors=9, num_classes=80, prior=0.01, feature_size=256,
+        self,
+        num_features_in,
+        num_anchors=9,
+        num_classes=80,
+        prior=0.01,
+        feature_size=256,
     ):
         super(ClassificationModel, self).__init__()
 
@@ -127,7 +140,9 @@ class ClassificationModel(nn.Module):
         self.conv4 = nn.Conv2d(feature_size, feature_size, kernel_size=3, padding=1)
         self.act4 = nn.ReLU()
 
-        self.output = nn.Conv2d(feature_size, num_anchors * num_classes, kernel_size=3, padding=1)
+        self.output = nn.Conv2d(
+            feature_size, num_anchors * num_classes, kernel_size=3, padding=1
+        )
         self.output_act = nn.Sigmoid()
 
     def forward(self, x):
@@ -222,7 +237,9 @@ class ResNet(nn.Module):
         prior = 0.01
 
         self.classificationModel.output.weight.data.fill_(0)
-        self.classificationModel.output.bias.data.fill_(-math.log((1.0 - prior) / prior))
+        self.classificationModel.output.bias.data.fill_(
+            -math.log((1.0 - prior) / prior)
+        )
 
         self.regressionModel.output.weight.data.fill_(0)
         self.regressionModel.output.bias.data.fill_(0)
@@ -282,7 +299,9 @@ class ResNet(nn.Module):
 
         features = self.fpn([x2, x3, x4])
 
-        regression = torch.cat([self.regressionModel(feature) for feature in features], dim=1)
+        regression = torch.cat(
+            [self.regressionModel(feature) for feature in features], dim=1
+        )
 
         classification = torch.cat(
             [self.classificationModel(feature) for feature in features], dim=1

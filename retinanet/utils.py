@@ -38,7 +38,9 @@ class ColorFormatter(logging.Formatter):
 
 
 def get_logger(
-    name, filepath: Optional[Union[str, os.PathLike]] = None, level: Optional[str] = "debug",
+    name,
+    filepath: Optional[Union[str, os.PathLike]] = None,
+    level: Optional[str] = "debug",
 ):
     log_level = {"info": logging.INFO, "debug": logging.DEBUG, "error": logging.ERROR}
 
@@ -62,7 +64,9 @@ def get_logger(
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False)
+    return nn.Conv2d(
+        in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False
+    )
 
 
 class BasicBlock(nn.Module):
@@ -104,7 +108,9 @@ class Bottleneck(nn.Module):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(
+            planes, planes, kernel_size=3, stride=stride, padding=1, bias=False
+        )
         self.bn2 = nn.BatchNorm2d(planes)
         self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(planes * 4)
@@ -140,7 +146,8 @@ class BBoxTransform(nn.Module):
         super(BBoxTransform, self).__init__()
         if mean is None:
             self.mean = nn.Parameter(
-                torch.from_numpy(np.array([0, 0, 0, 0]).astype(np.float32)), requires_grad=False,
+                torch.from_numpy(np.array([0, 0, 0, 0]).astype(np.float32)),
+                requires_grad=False,
             )
             # if torch.cuda.is_available():
             #     self.mean = torch.nn.Parameters(torch.from_numpy(
@@ -344,10 +351,14 @@ def get_hparams(config):
     hparams["shiftscalerotate"] = config.augs["shiftscalerotate"]
     hparams["perspective"] = config.augs["perspective"]
     hparams["rgb_shift"] = (
-        ",".join(list(map(str, config.augs["rgb_shift"]))) if config.augs["rgb_shift"] else None
+        ",".join(list(map(str, config.augs["rgb_shift"])))
+        if config.augs["rgb_shift"]
+        else None
     )
     hparams["cutout"] = (
-        ",".join(list(map(str, config.augs["cutout"]))) if config.augs["cutout"] else None
+        ",".join(list(map(str, config.augs["cutout"])))
+        if config.augs["cutout"]
+        else None
     )
     hparams["min_visibility"] = config.augs["min_visibility"]
     hparams["min_area"] = config.augs["min_area"]
