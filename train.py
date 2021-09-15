@@ -105,9 +105,9 @@ def load_checkpoint(model: nn.Module, weights: str, depth: int) -> nn.Module:
             logger.info("Resuming training from checkpoint in {}".format(weights))
         except KeyError as e:
             s = (
-                "%s is not compatible with depth %s. This may be due to model architecture differences or %s may be out of date. "
-                "Please delete or update %s and try again, or use --weights '' to train from scratch."
-                % (weights, str(depth), weights, weights)
+                    "%s is not compatible with depth %s. This may be due to model architecture differences or %s may be out of date. "
+                    "Please delete or update %s and try again, or use --weights '' to train from scratch."
+                    % (weights, str(depth), weights, weights)
             )
             raise KeyError(s) from e
         del ckpt
@@ -224,7 +224,7 @@ def validate(model, dataset, valid_loader):
     model.eval()
 
     for i, (images, labels, scales, offset_x, offset_y, image_ids) in tqdm(
-        enumerate(valid_loader), total=len(valid_loader), leave=keep_pbar
+            enumerate(valid_loader), total=len(valid_loader), leave=keep_pbar
     ):
 
         val_image_ids.extend(image_ids)
@@ -356,7 +356,8 @@ def main():
         dataset_train = CSVDataset(
             train_file=args.csv_train,
             class_list=args.csv_classes,
-            transform=transforms.Compose([Normalizer(), Augmenter(), Resizer()]),
+            # transform=transforms.Compose([Normalizer(), Augmenter(), Resizer()]),
+            transform=transforms.Compose([Normalizer(), Augmenter(), Resizer(img_dim)]),
         )
 
         if args.csv_val is None:
@@ -366,7 +367,8 @@ def main():
             dataset_val = CSVDataset(
                 train_file=args.csv_val,
                 class_list=args.csv_classes,
-                transform=transforms.Compose([Normalizer(), Resizer()]),
+                # transform=transforms.Compose([Normalizer(), Resizer()]),
+                transform=transforms.Compose([Normalizer(), Resizer(img_dim)]),
             )
 
     else:
@@ -418,15 +420,15 @@ def main():
 
     # Create the model
     if args.depth == 18:
-        retinanet = model.resnet18(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet18(num_classes=dataset_train.num_classes(), pretrained=True)
     elif args.depth == 34:
-        retinanet = model.resnet34(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet34(num_classes=dataset_train.num_classes(), pretrained=True)
     elif args.depth == 50:
-        retinanet = model.resnet50(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet50(num_classes=dataset_train.num_classes(), pretrained=True)
     elif args.depth == 101:
-        retinanet = model.resnet101(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet101(num_classes=dataset_train.num_classes(), pretrained=True)
     elif args.depth == 152:
-        retinanet = model.resnet152(num_classes=dataset_train.num_classes, pretrained=True)
+        retinanet = model.resnet152(num_classes=dataset_train.num_classes(), pretrained=True)
     else:
         raise ValueError("Unsupported model depth, must be one of 18, 34, 50, 101, 152")
 
@@ -495,10 +497,10 @@ def main():
             + 0.5
             * (args.base_lr - args.final_lr)
             * (
-                1
-                + math.cos(
-                    math.pi * t / (len(dataloader_train) * (args.epochs - args.warmup_epochs))
-                )
+                    1
+                    + math.cos(
+                math.pi * t / (len(dataloader_train) * (args.epochs - args.warmup_epochs))
+            )
             )
             for t in iters
         ]
