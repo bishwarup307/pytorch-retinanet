@@ -356,8 +356,7 @@ def main():
         dataset_train = CSVDataset(
             train_file=args.csv_train,
             class_list=args.csv_classes,
-            # transform=transforms.Compose([Normalizer(), Augmenter(), Resizer()]),
-            transform=transforms.Compose([Normalizer(), Augmenter(), Resizer(img_dim)]),
+            transform=transforms.Compose([Normalizer(), Augmenter(), Resizer()]),
         )
 
         if args.csv_val is None:
@@ -367,8 +366,7 @@ def main():
             dataset_val = CSVDataset(
                 train_file=args.csv_val,
                 class_list=args.csv_classes,
-                # transform=transforms.Compose([Normalizer(), Resizer()]),
-                transform=transforms.Compose([Normalizer(), Resizer(img_dim)]),
+                transform=transforms.Compose([Normalizer(), Resizer()]),
             )
 
     else:
@@ -420,15 +418,15 @@ def main():
 
     # Create the model
     if args.depth == 18:
-        retinanet = model.resnet18(num_classes=dataset_train.num_classes(), pretrained=True)
+        retinanet = model.resnet18(num_classes=dataset_train.num_classes, pretrained=True)
     elif args.depth == 34:
-        retinanet = model.resnet34(num_classes=dataset_train.num_classes(), pretrained=True)
+        retinanet = model.resnet34(num_classes=dataset_train.num_classes, pretrained=True)
     elif args.depth == 50:
-        retinanet = model.resnet50(num_classes=dataset_train.num_classes(), pretrained=True)
+        retinanet = model.resnet50(num_classes=dataset_train.num_classes, pretrained=True)
     elif args.depth == 101:
-        retinanet = model.resnet101(num_classes=dataset_train.num_classes(), pretrained=True)
+        retinanet = model.resnet101(num_classes=dataset_train.num_classes, pretrained=True)
     elif args.depth == 152:
-        retinanet = model.resnet152(num_classes=dataset_train.num_classes(), pretrained=True)
+        retinanet = model.resnet152(num_classes=dataset_train.num_classes, pretrained=True)
     else:
         raise ValueError("Unsupported model depth, must be one of 18, 34, 50, 101, 152")
 
